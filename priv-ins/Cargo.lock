@@ -995,6 +995,7 @@ name = "priv-ins"
 version = "0.1.0"
 dependencies = [
  "async-std",
+ "num-traits",
  "serde",
  "serde_json",
  "tide",

@@ -6,10 +6,15 @@ type BinaryOp = {
   readonly op: BinaryOperator;
 };
 
+type Variable = {
+  readonly name: string;
+};
+
 type Number = {
   readonly number: number;
 };
 
 export type Expression =
   | { readonly number: Number }
-  | { readonly binOp: BinaryOp };
+  | { readonly binOp: BinaryOp }
+  | { readonly variable: Variable };

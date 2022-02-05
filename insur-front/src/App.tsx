@@ -12,8 +12,8 @@ function App() {
         },
       },
       right: {
-        number: {
-          number: 10,
+        variable: {
+          name: "x",
         },
       },
       op: "Add",
@@ -32,7 +32,7 @@ function App() {
       {isLoading && <p>Loading</p>}
       {data && <p>Got response {data.msg}</p>}
       {error && <p>Error!</p>}
-      <button onClick={onClick} >CLICK ME TO SUBMIT</button>
+      <button onClick={onClick}>CLICK ME TO SUBMIT</button>
     </div>
   );
 }
