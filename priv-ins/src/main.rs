@@ -1,8 +1,12 @@
+#[macro_use]
+extern crate ff;
 use crate::rest::expression;
 use tide::http::headers::HeaderValue;
 
 mod expressions;
 mod rest;
+mod crypto;
+mod protocol;
 
 use tide::security::{CorsMiddleware, Origin};
 
