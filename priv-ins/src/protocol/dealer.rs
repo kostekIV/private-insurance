@@ -5,19 +5,35 @@ use crate::crypto::{
 use crate::protocol::{CirId, DealerCommands, DealerEvents, NodeId, VarId};
 use ff::Field;
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 struct TrustedDealer {
     n_parties: u8,
     alpha: (Elem, Vec<Elem>),
     beavers: HashMap<CirId, Vec<BeaverShare>>,
-    variables_ownership: HashMap<VarId, NodeId>,
+    variables_owned: HashSet<VarId>,
     senders: HashMap<NodeId, UnboundedSender<DealerEvents>>,
     receiver: UnboundedReceiver<(NodeId, DealerCommands)>,
 }
 
 impl TrustedDealer {
+    fn new(
+        n_parties: u8,
+        senders: HashMap<NodeId, UnboundedSender<DealerEvents>>,
+        receiver: UnboundedReceiver<(NodeId, DealerCommands)>,
+    ) -> Self {
+        let a = Elem::random(rand::thread_rng());
+        Self {
+            n_parties,
+            alpha: (a, shares::elems_from_secret(&a, n_parties)),
+            beavers: HashMap::new(),
+            variables_owned: HashSet::new(),
+            senders,
+            receiver,
+        }
+    }
+
     async fn run(mut self) {
         loop {
             match self.receiver.recv().await {
@@ -48,10 +64,7 @@ impl TrustedDealer {
                     }
                 }
                 Some((node_id, DealerCommands::NodeOpenSelfInput(cir_id))) => {
-                    if !self.variables_ownership.contains_key(&cir_id) {
-                        self.variables_ownership
-                            .insert(cir_id.clone(), node_id)
-                            .expect("Dealer should be able to insert key");
+                    if !self.variables_owned.insert(cir_id.clone()) {
                         let r = Elem::random(rand::thread_rng());
                         let shares = shares::shares_from_secret(&r, &self.alpha.1, self.n_parties);
                         for (i, share) in shares.iter().enumerate() {
