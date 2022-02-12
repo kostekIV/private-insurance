@@ -5,7 +5,8 @@ use crate::crypto::shares::Share;
 
 #[derive(Clone, Debug)]
 pub enum Msg {
-    OpenShare(CirId, Share)
+    OpenShare(CirId, Share),
+    OpenVariable(CirId, Share)
 }
 
 pub type NetworkMessage = (NodeId, Msg);

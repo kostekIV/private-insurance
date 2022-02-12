@@ -19,13 +19,9 @@ struct Party<N: Network + Send> {
 }
 
 impl<N: Network + Send> Party<N> {
-    async fn gunwo(mut self) {
-        let x = match self.node_commands.recv().await {
-            None => { return (); }
-            Some(x) => { x }
-        };
-    }
-
+    /// collects share from given node for given circuit node.
+    /// Checks for double sending
+    /// If we have all shares returns true
     fn collect_share(&mut self, from: NodeId, share: Share, cid: CirId) -> bool {
         let opened_cirs = self.opened_shares.entry(from).or_insert(HashSet::new());
 
@@ -53,6 +49,9 @@ impl<N: Network + Send> Party<N> {
                                 self.node_events.send(NodeEvents::CirReady(cid, collected_shares)).expect("Send should succeed");
                             }
                         }
+                        Msg::OpenVariable(cid, share) => {
+                            self.node_events.send(NodeEvents::NodeVariableReady(cid, share)).expect("Send should succeed");
+                        }
                     }
                 },
                 node_command = self.node_commands.recv() => {
@@ -78,6 +77,9 @@ impl<N: Network + Send> Party<N> {
                                 DealerCommands::BeaverFor(cir_id)
                             ).expect("Send should succeed");
                         }
+                        NodeCommands::OpenSelfShare(s, cir_id) => {
+                            self.network.broadcast(Msg::OpenVariable(cir_id, s))
+                        }
                     }
                 },
                 dealer_msg = self.dealer.1.recv() => {
@@ -97,7 +99,7 @@ impl<N: Network + Send> Party<N> {
                         }
                         DealerEvents::NodeVariableShared(var_id, r_share) => {
                             self.node_events.send(
-                                NodeEvents::NodeVariableReady(var_id, r_share)
+                                NodeEvents::NodeVariableShareReady(var_id, r_share)
                             ).expect("Send should succeed");
                         }
                         DealerEvents::BeaverSharesFor(cir_id, beaver_shares) => {
