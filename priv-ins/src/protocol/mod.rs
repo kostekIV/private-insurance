@@ -35,16 +35,16 @@ pub enum DealerEvents {
     /// sends beaver shares for cirid for this node.
     BeaverSharesFor(CirId, BeaverShare),
     /// gives alpha_i, and vec of (var_id, alpha_i * x_j)
-    AlphaFor(Elem),
+    Alpha(Elem),
 }
 
 #[derive(Debug)]
 pub enum DealerCommands {
     /// Node wants to secretly share its variable
-    NodeOpenSelfInput(VarId),
+    NodeOpenSelfInput(CirId),
     /// Node needs beaver for cir_id
     BeaverFor(CirId),
-    NeedAlphaFor(NodeId),
+    NeedAlpha,
 }
 
 #[derive(Debug)]
@@ -57,7 +57,7 @@ pub enum NodeCommands {
     OpenSelfInput(CirId),
     /// Node needs beaver for cir_id
     NeedBeaver(CirId),
-    NeedAlphaFor(NodeId),
+    NeedAlpha,
 }
 
 #[derive(Debug)]
@@ -76,14 +76,6 @@ pub enum NodeEvents {
 
 #[derive(Debug)]
 pub struct Alpha(Elem);
-
-#[async_trait::async_trait]
-pub trait Dealer {
-    /// Creates beaver share for `id`.
-    async fn new_beaver(&mut self, id: &CirId);
-    /// prepares variable to be secretly shared
-    async fn prepare_variable(&mut self, nid: &NodeId, vid: &VarId);
-}
 
 pub struct Provider {
     id: u64,

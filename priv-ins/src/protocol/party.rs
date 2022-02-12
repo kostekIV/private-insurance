@@ -84,9 +84,9 @@ impl<N: Network + Send> Party<N> {
                         NodeCommands::OpenSelfShare(s, cir_id) => {
                             self.network.broadcast(Msg::OpenVariable(cir_id, s))
                         },
-                        NodeCommands::NeedAlphaFor(id) => {
+                        NodeCommands::NeedAlpha => {
                             self.dealer.0.send(
-                                DealerCommands::NeedAlphaFor(id)
+                                DealerCommands::NeedAlpha
                             ).expect("Send should succeed");
                         }
                     }
@@ -116,7 +116,7 @@ impl<N: Network + Send> Party<N> {
                                 NodeEvents::BeaverFor(cir_id, beaver_shares)
                             ).expect("Send should succeed");
                         }
-                        DealerEvents::AlphaFor(alpha) => {
+                        DealerEvents::Alpha(alpha) => {
                             self.alpha_channel.send(Alpha(alpha));
                         }
                     }

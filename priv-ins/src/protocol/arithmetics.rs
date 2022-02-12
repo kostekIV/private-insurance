@@ -77,11 +77,10 @@ mod tests {
         let a = Elem::from(2137);
         let b = Elem::from(420);
         let n_parties = 5;
-        let alpha_shares = shares::shares_from_secret(&alpha, n_parties);
-        let a_shares = shares::shares_from_secret(&a, n_parties);
-        let b_shares = shares::shares_from_secret(&b, n_parties);
-        let macs_a = get_shares(&a_shares, &alpha_shares);
-        let macs_b = get_shares(&b_shares, &alpha_shares);
+        let alpha_shares = shares::elems_from_secret(&alpha, n_parties);
+        let a_shares = shares::shares_from_secret(&a, &alpha_shares, n_parties);
+        let b_shares = shares::shares_from_secret(&b, &alpha_shares, n_parties);
+
         let calculators: Vec<_> = (0..n_parties)
             .map(|id| Calculator {
                 id: id as u64,
@@ -89,9 +88,9 @@ mod tests {
             })
             .collect();
 
-        let macs: Vec<_> = macs_a
+        let macs: Vec<_> = a_shares
             .iter()
-            .zip(macs_b.iter())
+            .zip(b_shares.iter())
             .zip(calculators.iter())
             .map(|((m_a, m_b), c)| c.add(*m_a, *m_b))
             .collect();
@@ -108,11 +107,10 @@ mod tests {
         let a = Elem::from(2137);
         let b = Elem::from(420);
         let n_parties = 5;
-        let alpha_shares = shares::shares_from_secret(&alpha, n_parties);
-        let a_shares = shares::shares_from_secret(&a, n_parties);
-        let b_shares = shares::shares_from_secret(&b, n_parties);
-        let macs_a = get_shares(&a_shares, &alpha_shares);
-        let macs_b = get_shares(&b_shares, &alpha_shares);
+        let alpha_shares = shares::elems_from_secret(&alpha, n_parties);
+        let a_shares = shares::shares_from_secret(&a, &alpha_shares, n_parties);
+        let b_shares = shares::shares_from_secret(&b, &alpha_shares, n_parties);
+
         let calculators: Vec<_> = (0..n_parties)
             .map(|id| Calculator {
                 id: id as u64,
@@ -120,9 +118,9 @@ mod tests {
             })
             .collect();
 
-        let macs: Vec<_> = macs_a
+        let macs: Vec<_> = a_shares
             .iter()
-            .zip(macs_b.iter())
+            .zip(b_shares.iter())
             .zip(calculators.iter())
             .map(|((m_a, m_b), c)| c.sub(*m_a, *m_b))
             .collect();
@@ -139,9 +137,8 @@ mod tests {
         let a = Elem::from(2137);
         let b = Elem::from(420);
         let n_parties = 5;
-        let alpha_shares = shares::shares_from_secret(&alpha, n_parties);
-        let a_shares = shares::shares_from_secret(&a, n_parties);
-        let macs_a = get_shares(&a_shares, &alpha_shares);
+        let alpha_shares = shares::elems_from_secret(&alpha, n_parties);
+        let a_shares = shares::shares_from_secret(&a, &alpha_shares, n_parties);
 
         let calculators: Vec<_> = (0..n_parties)
             .map(|id| Calculator {
@@ -150,7 +147,7 @@ mod tests {
             })
             .collect();
 
-        let macs: Vec<_> = macs_a
+        let macs: Vec<_> = a_shares
             .iter()
             .zip(calculators.iter())
             .map(|(m_a, c)| c.add_const(*m_a, b))
@@ -168,9 +165,8 @@ mod tests {
         let a = Elem::from(2137);
         let b = Elem::from(420);
         let n_parties = 5;
-        let alpha_shares = shares::shares_from_secret(&alpha, n_parties);
-        let a_shares = shares::shares_from_secret(&a, n_parties);
-        let macs_a = get_shares(&a_shares, &alpha_shares);
+        let alpha_shares = shares::elems_from_secret(&alpha, n_parties);
+        let a_shares = shares::shares_from_secret(&a, &alpha_shares, n_parties);
 
         let calculators: Vec<_> = (0..n_parties)
             .map(|id| Calculator {
@@ -179,7 +175,7 @@ mod tests {
             })
             .collect();
 
-        let macs: Vec<_> = macs_a
+        let macs: Vec<_> = a_shares
             .iter()
             .zip(calculators.iter())
             .map(|(m_a, c)| c.mul_by_const(*m_a, b))
@@ -197,11 +193,9 @@ mod tests {
         let a = Elem::from(2137);
         let b = Elem::from(420);
         let n_parties = 5;
-        let alpha_shares = shares::shares_from_secret(&alpha, n_parties);
-        let a_shares = shares::shares_from_secret(&a, n_parties);
-        let b_shares = shares::shares_from_secret(&b, n_parties);
-        let macs_a = get_shares(&a_shares, &alpha_shares);
-        let macs_b = get_shares(&b_shares, &alpha_shares);
+        let alpha_shares = shares::elems_from_secret(&alpha, n_parties);
+        let a_shares = shares::shares_from_secret(&a, &alpha_shares, n_parties);
+        let b_shares = shares::shares_from_secret(&b, &alpha_shares, n_parties);
 
         let calculators: Vec<_> = (0..n_parties)
             .map(|id| Calculator {
@@ -209,17 +203,11 @@ mod tests {
                 alpha_share: alpha_shares[id as usize],
             })
             .collect();
-        let beaver = shares::random_beaver(n_parties);
+        let beaver_shares = shares::random_beaver(&alpha_shares, n_parties);
 
-        let beaver_shares: Vec<_> = (get_shares(&beaver.0, &alpha_shares)
+        let macs: Vec<_> = a_shares
             .iter()
-            .zip(get_shares(&beaver.1, &alpha_shares).iter())
-            .zip(get_shares(&beaver.2, &alpha_shares).iter())
-            .map(|((a, b), c)| (*a, *b, *c)))
-        .collect();
-        let macs: Vec<_> = macs_a
-            .iter()
-            .zip(macs_b.iter())
+            .zip(b_shares.iter())
             .zip(calculators.iter())
             .zip(beaver_shares.iter())
             .map(|(((m_a, m_b), c), b)| c.mul_prepare(*m_a, *m_b, *b))
@@ -232,8 +220,8 @@ mod tests {
             (a.0 + b.0 .1, a.1 + b.1 .1)
         });
 
-        let beaver_a = shares::sum_shares(&beaver.0);
-        let beaver_b = shares::sum_shares(&beaver.1);
+        let beaver_a = shares::sum_shares(&beaver_shares.iter().map(|b| b.0 .0).collect());
+        let beaver_b = shares::sum_shares(&beaver_shares.iter().map(|b| b.1 .0).collect());
         assert_eq!(shared.0, a - beaver_a);
         assert_eq!(shared.1, b - beaver_b);
 
@@ -247,21 +235,22 @@ mod tests {
         let a = Elem::from(2137);
         let b = Elem::from(420);
         let n_parties = 5;
-        let alpha_shares = shares::shares_from_secret(&alpha, n_parties);
+        let alpha_shares = shares::elems_from_secret(&alpha, n_parties);
+
         let calculators: Vec<_> = (0..n_parties)
             .map(|id| Calculator {
                 id: id as u64,
                 alpha_share: alpha_shares[id as usize],
             })
             .collect();
-        let beaver = shares::random_beaver(n_parties);
+        let beaver_shares = shares::random_beaver(&alpha_shares, n_parties);
 
-        let beaver_a = shares::sum_shares(&beaver.0);
-        let beaver_b = shares::sum_shares(&beaver.1);
+        let beaver_a = shares::sum_shares(&beaver_shares.iter().map(|b| b.0 .0).collect());
+        let beaver_b = shares::sum_shares(&beaver_shares.iter().map(|b| b.1 .0).collect());
 
-        let macs_a = get_shares(&beaver.0, &alpha_shares);
-        let macs_b = get_shares(&beaver.1, &alpha_shares);
-        let macs_c: Vec<_> = get_shares(&beaver.2, &alpha_shares);
+        let macs_a: Vec<_> = beaver_shares.iter().map(|b| b.0).collect();
+        let macs_b: Vec<_> = beaver_shares.iter().map(|b| b.1).collect();
+        let macs_c: Vec<_> = beaver_shares.iter().map(|b| b.2).collect();
         let macs: Vec<_> = macs_a
             .iter()
             .zip(macs_b.iter())
