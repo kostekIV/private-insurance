@@ -1,4 +1,4 @@
-use crate::crypto::shares::Share;
+use crate::crypto::shares::{Elem, Share};
 use crate::protocol::{CirId, NodeId};
 use std::collections::HashMap;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -6,7 +6,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 #[derive(Clone, Debug)]
 pub enum Msg {
     OpenShare(CirId, Share),
-    OpenVariable(CirId, Share),
+    OpenVariable(CirId, Elem),
 }
 
 pub type NetworkMessage = (NodeId, Msg);

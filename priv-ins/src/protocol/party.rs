@@ -54,8 +54,8 @@ impl<N: Network + Send> Party<N> {
                                 self.node_events.send(NodeEvents::CirReady(cid, collected_shares)).expect("Send should succeed");
                             }
                         }
-                        Msg::OpenVariable(cid, share) => {
-                            self.node_events.send(NodeEvents::NodeVariableReady(cid, share)).expect("Send should succeed");
+                        Msg::OpenVariable(cid, elem) => {
+                            self.node_events.send(NodeEvents::NodeVariableReady(cid, elem)).expect("Send should succeed");
                         }
                     }
                 },
@@ -84,6 +84,11 @@ impl<N: Network + Send> Party<N> {
                         }
                         NodeCommands::OpenSelfShare(s, cir_id) => {
                             self.network.broadcast(Msg::OpenVariable(cir_id, s))
+                        },
+                        NodeCommands::NeedAlphaFor(id, ids) => {
+                            self.dealer.0.send(
+                                DealerCommands::NeedAlphaFor(id, ids)
+                            ).expect("Send should succeed");
                         }
                     }
                 },
@@ -110,6 +115,11 @@ impl<N: Network + Send> Party<N> {
                         DealerEvents::BeaverSharesFor(cir_id, beaver_shares) => {
                             self.node_events.send(
                                 NodeEvents::BeaverFor(cir_id, beaver_shares)
+                            ).expect("Send should succeed");
+                        }
+                        DealerEvents::AlphaFor(alpha, ms) => {
+                            self.node_events.send(
+                                NodeEvents::AlphaFor(alpha, ms)
                             ).expect("Send should succeed");
                         }
                     }

@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::iter;
 use std::ops::Mul;
 
-use crate::crypto::shares::{BeaverShare, Share, Shares};
+use crate::crypto::shares::{BeaverShare, Elem, Share, Shares};
 use crate::expressions::{BinaryOp, Expression};
 
 pub type NodeId = u64;
@@ -29,11 +29,13 @@ pub fn sub_id(id: &CirId, name: &CirId) -> CirId {
 pub enum DealerEvents {
     /// sends r and [r] for sharing secret value `varid` of node
     /// node receiving this message should own the variable
-    NodeSelfVariable(CirId, Share, Share),
+    NodeSelfVariable(CirId, Elem, Share),
     /// sends share [r] for secret value `varid`
     NodeVariableShared(CirId, Share),
     /// sends beaver shares for cirid for this node.
     BeaverSharesFor(CirId, BeaverShare),
+    /// gives alpha_i, and vec of (var_id, alpha_i * x_j)
+    AlphaFor(Elem, Vec<(CirId, Elem)>),
 }
 
 #[derive(Debug)]
@@ -42,6 +44,7 @@ pub enum DealerCommands {
     NodeOpenSelfInput(VarId),
     /// Node needs beaver for cir_id
     BeaverFor(CirId),
+    NeedAlphaFor(NodeId, Vec<CirId>),
 }
 
 #[derive(Debug)]
@@ -49,11 +52,12 @@ pub enum NodeCommands {
     /// Node opens its share for CirId
     OpenShare(Share, CirId),
     /// Node opens its (share - r) for CirId
-    OpenSelfShare(Share, CirId),
+    OpenSelfShare(Elem, CirId),
     /// Node wants to secretly share its variable
     OpenSelfInput(CirId),
     /// Node needs beaver for cir_id
     NeedBeaver(CirId),
+    NeedAlphaFor(NodeId, Vec<CirId>),
 }
 
 #[derive(Debug)]
@@ -61,13 +65,14 @@ pub enum NodeEvents {
     /// cir is ready with shares from all of nodes
     CirReady(CirId, Shares),
     /// parts for sharing variable `var_id` are ready (r, [r])
-    SelfVariableReady(CirId, Share, Share),
+    SelfVariableReady(CirId, Elem, Share),
     /// (x - share) for var_id is ready
-    NodeVariableReady(CirId, Share),
+    NodeVariableReady(CirId, Elem),
     /// [share] for var_id is ready
     NodeVariableShareReady(CirId, Share),
     /// beaver for node in circuit is ready
     BeaverFor(CirId, BeaverShare),
+    AlphaFor(Elem, Vec<(CirId, Elem)>),
 }
 
 #[async_trait::async_trait]

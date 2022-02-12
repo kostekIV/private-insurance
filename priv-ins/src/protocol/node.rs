@@ -1,9 +1,10 @@
-use crate::crypto::shares::{sum_shares, BeaverShare, Share, Shares};
+use crate::crypto::shares::{sum_shares, BeaverShare, Elem, Share, Shares};
 use crate::protocol::{CirId, NodeCommands, NodeEvents, NodeId, VarId};
 use async_recursion::async_recursion;
 use std::collections::HashMap;
 use std::ops::Sub;
 
+use crate::protocol::arithmetics::Calculator;
 use crate::protocol::expression::{DecoratedExpression, MidEvalExpression};
 use futures::prelude::*;
 use tokio::select;
@@ -20,7 +21,7 @@ pub struct Node {
     variables: HashMap<CirId, Share>,
     beavers: HashMap<CirId, BeaverShare>,
     variable_shares: HashMap<CirId, Share>,
-    variable_salts: HashMap<CirId, Share>,
+    variable_salts: HashMap<CirId, Elem>,
 }
 
 impl Node {
@@ -36,10 +37,15 @@ impl Node {
         let s1 = self.variable_shares.remove(&var_node).expect("checked");
         let s2 = self.variable_salts.remove(&var_node).expect("checked");
 
-        self.evaluated.insert(var_node, s1 + s2);
+        // self.evaluated.insert(var_node, s1 + s2);
     }
 
     pub async fn run(mut self, exp: DecoratedExpression) {
+        self.party_commands
+            .send(NodeCommands::NeedAlphaFor(self.id, exp.self_var_ids(None)));
+
+        let mut calculator: Option<Calculator> = None;
+
         // announce need for beaver for this circuit nodes
         for mul_id in exp.mul_ids() {
             self.party_commands
@@ -48,7 +54,7 @@ impl Node {
         }
 
         // announce to delear our variable
-        for var_id in exp.self_var_ids(self.id) {
+        for var_id in exp.self_var_ids(Some(self.id)) {
             self.party_commands
                 .send(NodeCommands::OpenSelfInput(var_id))
                 .expect("send should succeed");
@@ -142,7 +148,7 @@ impl Node {
                         log::debug!("got twice opened value for {}", c_id);
                     }
 
-                    self.fully_open.insert(c_id, sum_shares(&s));
+                    // self.fully_open.insert(c_id, sum_shares(&s));
                 }
                 NodeEvents::SelfVariableReady(c_id, r, r_share) => {
                     if !self.variables.contains_key(&c_id) {
@@ -151,13 +157,13 @@ impl Node {
                     }
                     let x = self.variables.get(&c_id).expect("checked");
 
-                    let xr = x.sub(r);
-                    // send to everyone x-r
-                    self.party_commands
-                        .send(NodeCommands::OpenSelfShare(xr, c_id.clone()))
-                        .expect("send should succeed");
-                    // evaluate our variable as (x-r) + r_share
-                    self.evaluated.insert(c_id, xr + r_share);
+                    // let xr = x.sub(r);
+                    // // send to everyone x-r
+                    // self.party_commands
+                    //     .send(NodeCommands::OpenSelfShare(xr, c_id.clone()))
+                    //     .expect("send should succeed");
+                    // // evaluate our variable as (x-r) + r_share
+                    // self.evaluated.insert(c_id, xr + r_share);
                 }
                 NodeEvents::NodeVariableReady(c_id, s) => {
                     if !self.variable_salts.contains_key(&c_id) {
@@ -183,6 +189,9 @@ impl Node {
 
                     self.variable_shares.insert(c_id.clone(), s);
                     self.combine_variable_if_full(c_id);
+                }
+                NodeEvents::AlphaFor(alpha, ms) => {
+                    calculator = Some(Calculator::new(self.id, alpha));
                 }
             }
         }

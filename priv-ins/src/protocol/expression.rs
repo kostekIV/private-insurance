@@ -1,4 +1,4 @@
-use crate::crypto::shares::Share;
+use crate::crypto::shares::{Elem, Share};
 use crate::expressions::{BinaryOp, Expression};
 use crate::protocol::{CirId, Dealer, NodeId, Provider, VarId};
 use std::collections::HashMap;
@@ -10,25 +10,25 @@ type BExpression = Box<DecoratedExpression>;
 /// Each node gets unique id.
 pub enum DecoratedExpression {
     /// addition of constant to nonconst expression
-    AddConstant(Share, BExpression, CirId),
+    AddConstant(Elem, BExpression, CirId),
     /// addition of two nonconst expressions
     Add(BExpression, BExpression, CirId),
     /// multiplication of two nonconst expression
     Mul(BExpression, BExpression, CirId),
     /// multiplication of constant to nonconst expression
-    MulConstant(Share, BExpression, CirId),
+    MulConstant(Elem, BExpression, CirId),
     /// node representing variable belonging to node
     Var(NodeId, VarId, CirId),
     /// constant node, only used during preprocessing phase(unless whole raw expression was constant)
     /// or constant equivalent (without any variables).
-    Constant(Share, CirId),
+    Constant(Elem, CirId),
 }
 
 /// Expression repr after processing, all non const expressions are removed and substituted for ids
 pub enum MidEvalExpression {
-    AddConstant(Share, CirId, CirId),
+    AddConstant(Elem, CirId, CirId),
     Add(CirId, CirId, CirId),
-    MulConstant(Share, CirId, CirId),
+    MulConstant(Elem, CirId, CirId),
     Mul(CirId, CirId, CirId),
     Var(CirId),
 }
@@ -79,8 +79,8 @@ impl DecoratedExpression {
         }
     }
 
-    /// returns all ids of variables that belong to node
-    pub fn self_var_ids(&self, node_id: NodeId) -> Vec<CirId> {
+    /// returns all ids of variables that belong to node (or all variables if node is none)
+    pub fn self_var_ids(&self, node_id: Option<NodeId>) -> Vec<CirId> {
         match self {
             DecoratedExpression::AddConstant(_, e, _) => e.self_var_ids(node_id),
             DecoratedExpression::Add(e1, e2, _) => {
@@ -95,7 +95,7 @@ impl DecoratedExpression {
             }
             DecoratedExpression::MulConstant(_, e, _) => e.self_var_ids(node_id),
             DecoratedExpression::Var(other, _, cir_id) => {
-                if node_id == *other {
+                if node_id.is_none() || node_id.expect("not none") == *other {
                     vec![cir_id.clone()]
                 } else {
                     vec![]
@@ -165,7 +165,7 @@ pub fn decorate_expression(
 ) -> Result<DecoratedExpression, String> {
     match expr {
         Expression::Number { number } => Ok(DecoratedExpression::Constant(
-            Share::from(number),
+            Elem::from(number),
             id_provider.next(),
         )),
         Expression::BinOp { left, right, op } => {
@@ -223,8 +223,8 @@ mod tests {
     use super::*;
     use ff::Field;
 
-    fn dummy() -> Share {
-        Share::zero()
+    fn dummy() -> Elem {
+        Elem::zero()
     }
 
     fn test_expr() -> DecoratedExpression {
@@ -274,9 +274,9 @@ mod tests {
     fn returns_var_ids_correctly() {
         let d_expr = test_expr();
 
-        assert_eq!(vec!["1", "2", "6"], d_expr.self_var_ids(1));
-        assert_eq!(Vec::<CirId>::new(), d_expr.self_var_ids(2));
-        assert_eq!(vec!["5"], d_expr.self_var_ids(3));
+        assert_eq!(vec!["1", "2", "6"], d_expr.self_var_ids(Some(1)));
+        assert_eq!(Vec::<CirId>::new(), d_expr.self_var_ids(Some(2)));
+        assert_eq!(vec!["5"], d_expr.self_var_ids(Some(3)));
     }
 
     #[test]
