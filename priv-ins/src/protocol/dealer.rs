@@ -24,7 +24,3 @@ impl Dealer for TrustedDealer {
         self.variables_ownership.insert(vid.to_string(), nid.clone());
     }
 }
-
-struct RemoteDealer {
-
-}

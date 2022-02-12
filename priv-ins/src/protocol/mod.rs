@@ -3,6 +3,7 @@ mod node;
 mod party;
 mod network;
 mod test;
+mod arithmetics;
 
 use std::collections::HashMap;
 use ff::{Field, PrimeField};

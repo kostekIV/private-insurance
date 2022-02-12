@@ -5,7 +5,8 @@ use rand;
 
 pub type Share = Fp;
 pub type Shares = Vec<Share>;
-pub type BeaverShare = (Share, Share, Share);
+pub type Mac = (Share, Share);
+pub type BeaverShare = (Mac, Mac, Mac);
 pub type Beaver = (Shares, Shares, Shares);
 
 
