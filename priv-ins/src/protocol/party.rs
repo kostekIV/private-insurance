@@ -48,7 +48,7 @@ pub enum NodeEvents {
     BeaverFor(CirId, BeaverShare),
 }
 
-struct Party<N: Network> {
+struct Party<N: Network + Send> {
     dealer: (Sender<DealerCommands>, Receiver<DealerEvents>),
     node_commands: Receiver<NodeCommands>,
     node_events: Sender<NodeEvents>,
@@ -63,8 +63,7 @@ enum IsReady {
     Ready,
 }
 
-
-impl<N: Network> Party<N> {
+impl<N: Network + Send> Party<N> {
     async fn gunwo(mut self) {
         let x = match self.node_commands.recv().await {
             None => { return (); }
@@ -91,7 +90,7 @@ impl<N: Network> Party<N> {
     async fn run(&mut self) {
         loop {
             select! {
-                (from, msg) = self.network.receive() => {
+                Some((from, msg)) = self.network.receive() => {
                     match msg {
                         Msg::OpenShare(cid, share) => {
                             if self.collect_share(from, share, cid.clone()) {
@@ -112,7 +111,7 @@ impl<N: Network> Party<N> {
 
                     match cmd {
                         NodeCommands::OpenShare(share, cir_id) => {
-                            self.network.broadcast(Msg::OpenShare(cir_id, share)).await;
+                            self.network.broadcast(Msg::OpenShare(cir_id, share));
                         },
                         NodeCommands::OpenSelfInput(v_id) => {
                             self.dealer.0.send(

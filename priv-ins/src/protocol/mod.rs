@@ -2,6 +2,7 @@ mod dealer;
 mod node;
 mod party;
 mod network;
+mod test;
 
 use std::collections::HashMap;
 use ff::{Field, PrimeField};
