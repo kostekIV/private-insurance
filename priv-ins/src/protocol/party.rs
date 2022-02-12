@@ -1,52 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use tokio::select;
 use crate::crypto::shares::{BeaverShare, Share, Shares};
-use crate::protocol::{CirId, NodeId, VarId};
+use crate::protocol::{CirId, DealerCommands, DealerEvents, NodeCommands, NodeEvents, NodeId, VarId};
 use crate::protocol::network::{Msg, Network};
 
 use tokio::sync::mpsc::{UnboundedReceiver as Receiver, UnboundedSender as Sender};
 use futures::prelude::*;
 
-#[derive(Debug)]
-pub enum DealerEvents {
-    /// sends r and [r] for sharing secret value `varid` of node
-    /// node receiving this message should own the variable
-    NodeSelfVariable(VarId, Share, Share),
-    /// sends share [r] for secret value `varid`
-    NodeVariableShared(VarId, Share),
-    /// sends beaver shares for cirid for this node.
-    BeaverSharesFor(CirId, BeaverShare)
-}
-
-#[derive(Debug)]
-pub enum DealerCommands {
-    /// Node wants to secretly share its variable
-    NodeOpenSelfInput(VarId),
-    /// Node needs beaver for cir_id
-    BeaverFor(CirId)
-}
-
-#[derive(Debug)]
-pub enum NodeCommands {
-    /// Node opens its share for CirId
-    OpenShare(Share, CirId),
-    /// Node wants to secretly share its variable
-    OpenSelfInput(VarId),
-    /// Node needs beaver for cir_id
-    NeedBeaver(CirId),
-}
-
-#[derive(Debug)]
-pub enum NodeEvents {
-    /// cir is ready with shares from all of nodes
-    CirReady(CirId, Shares),
-    /// parts for sharing variable `var_id` are ready (r, [r])
-    SelfVariableReady(VarId, Share, Share),
-    /// share for var_id is ready
-    NodeVariableReady(VarId, Share),
-    /// beaver for node in circuit is ready
-    BeaverFor(CirId, BeaverShare),
-}
 
 struct Party<N: Network + Send> {
     dealer: (Sender<DealerCommands>, Receiver<DealerEvents>),
@@ -56,11 +16,6 @@ struct Party<N: Network + Send> {
     shares_per: HashMap<CirId, Shares>,
     opened_shares: HashMap<NodeId, HashSet<CirId>>,
     n_parties: u8,
-}
-
-enum IsReady {
-    NotReady,
-    Ready,
 }
 
 impl<N: Network + Send> Party<N> {

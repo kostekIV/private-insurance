@@ -9,7 +9,7 @@ use ff::{Field, PrimeField};
 use std::ops::{Mul};
 use async_recursion::async_recursion;
 
-use crate::crypto::shares::{BeaverShare, Share};
+use crate::crypto::shares::{BeaverShare, Share, Shares};
 use crate::expressions::{BinaryOp, Expression};
 use crate::protocol::DecoratedExpression::{Add, AddConstant, Constant, Mul as MulExpr, MulConstant, Var};
 
@@ -22,26 +22,47 @@ pub type CirId = String;
 pub fn sub_id(id: &CirId, name: &CirId) -> CirId {
     format!("{}-{}", id, name)
 }
-
-pub trait Connection {
-
+#[derive(Debug)]
+pub enum DealerEvents {
+    /// sends r and [r] for sharing secret value `varid` of node
+    /// node receiving this message should own the variable
+    NodeSelfVariable(VarId, Share, Share),
+    /// sends share [r] for secret value `varid`
+    NodeVariableShared(VarId, Share),
+    /// sends beaver shares for cirid for this node.
+    BeaverSharesFor(CirId, BeaverShare)
 }
 
-#[async_trait::async_trait]
-pub trait Party {
-    /// Opens value under `id`, waits for every share to be delivered and returns discovered value
-    async fn open(&mut self, id: &CirId, value: Share) -> Share;
-    /// Retrieve beaver share for `id`.
-    async fn beaver_for(&mut self, id: &CirId) -> BeaverShare;
-    /// returns r, [r] for NodeID
-    async fn open_self_input(&mut self, nid: NodeId, vid: VarId) -> (Share, Share);
-    /// broadcast from nid about vid (which is hided as (x - r)
-    async fn broadcast_self_input(&mut self, nid: NodeId, vid: VarId, share: Share);
-    /// returns share for NodeId (x - r) + [r]
-    async fn get_input_shares(&mut self, nid: NodeId, vid: VarId) -> Share;
-    /// returns if node can add constant
-    fn can_add(&self, nid: NodeId) -> bool;
+#[derive(Debug)]
+pub enum DealerCommands {
+    /// Node wants to secretly share its variable
+    NodeOpenSelfInput(VarId),
+    /// Node needs beaver for cir_id
+    BeaverFor(CirId)
 }
+
+#[derive(Debug)]
+pub enum NodeCommands {
+    /// Node opens its share for CirId
+    OpenShare(Share, CirId),
+    /// Node wants to secretly share its variable
+    OpenSelfInput(VarId),
+    /// Node needs beaver for cir_id
+    NeedBeaver(CirId),
+}
+
+#[derive(Debug)]
+pub enum NodeEvents {
+    /// cir is ready with shares from all of nodes
+    CirReady(CirId, Shares),
+    /// parts for sharing variable `var_id` are ready (r, [r])
+    SelfVariableReady(VarId, Share, Share),
+    /// share for var_id is ready
+    NodeVariableReady(VarId, Share),
+    /// beaver for node in circuit is ready
+    BeaverFor(CirId, BeaverShare),
+}
+
 
 #[async_trait::async_trait]
 pub trait Dealer {
@@ -54,12 +75,12 @@ pub trait Dealer {
 type BExpression = Box<DecoratedExpression>;
 
 pub enum DecoratedExpression {
-    AddConstant(Share, BExpression),
-    Add(BExpression, BExpression),
+    AddConstant(Share, BExpression, CirId),
+    Add(BExpression, BExpression, CirId),
     Mul(BExpression, BExpression, CirId),
-    MulConstant(Share, BExpression),
-    Var(NodeId, VarId),
-    Constant(Share),
+    MulConstant(Share, BExpression, CirId),
+    Var(NodeId, VarId, CirId),
+    Constant(Share, CirId),
 }
 
 pub struct Provider {
@@ -87,27 +108,12 @@ impl Provider {
 }
 
 
-/// Multiply share s1 by constant c
-pub fn mul_by_const(s1: &Share, c: &Share) -> Share {
-    s1.mul(c)
-}
-
-/// todo doc
-pub async fn mul<P: Party>(g_id: &CirId, s1: Share, s2: Share, party: &mut P) -> Share {
-    let (a, b, c) = party.beaver_for(&g_id).await;
-
-    let e = party.open(&sub_id(&g_id, &"e".to_string()), s1 - a).await;
-    let d = party.open(&sub_id(&g_id, &"e".to_string()), s2 - b).await;
-
-    c + mul_by_const(&b, &e) + mul_by_const(&a, &d) + e*d
-}
-
 
 #[async_recursion]
 pub async fn decorate_expression<D: Dealer + Send>(expr: Expression<u64>, id_provider: &mut Provider, dealer: &mut D) -> Result<DecoratedExpression, String> {
     match expr {
         Expression::Number { number } => {
-            Ok(DecoratedExpression::Constant(Share::from(number)))
+            Ok(DecoratedExpression::Constant(Share::from(number), id_provider.next()))
         }
         Expression::BinOp { left, right, op } => {
             let left = decorate_expression(*left, id_provider, dealer).await?;
@@ -116,17 +122,17 @@ pub async fn decorate_expression<D: Dealer + Send>(expr: Expression<u64>, id_pro
             match op {
                 BinaryOp::Add => {
                     match (left, right) {
-                        (Constant(s1), Constant(s2)) => { Ok(Constant(s1 + s2)) }
-                        (Constant(s1), x) => { Ok(AddConstant(s1, Box::new(x))) }
-                        (x, Constant(s1)) => { Ok(AddConstant(s1, Box::new(x))) }
-                        (x, y) => { Ok(Add(Box::new(x), Box::new(y))) }
+                        (Constant(s1, _), Constant(s2,_)) => { Ok(Constant(s1 + s2, id_provider.next())) }
+                        (Constant(s1, _), x) => { Ok(AddConstant(s1, Box::new(x), id_provider.next())) }
+                        (x, Constant(s1, _)) => { Ok(AddConstant(s1, Box::new(x), id_provider.next())) }
+                        (x, y) => { Ok(Add(Box::new(x), Box::new(y), id_provider.next())) }
                     }
                 }
                 BinaryOp::Mul => {
                     match (left, right) {
-                        (Constant(s1), Constant(s2)) => { Ok(Constant(s1 + s2)) }
-                        (Constant(s1), x) => { Ok(MulConstant(s1, Box::new(x))) }
-                        (x, Constant(s1)) => { Ok(MulConstant(s1, Box::new(x))) }
+                        (Constant(s1, _), Constant(s2, _)) => { Ok(Constant(s1 + s2, id_provider.next())) }
+                        (Constant(s1, _), x) => { Ok(MulConstant(s1, Box::new(x),id_provider.next())) }
+                        (x, Constant(s1, _)) => { Ok(MulConstant(s1, Box::new(x), id_provider.next())) }
                         (x, y) => {
                             let id = id_provider.next();
                             dealer.new_beaver(&id).await;
@@ -140,7 +146,7 @@ pub async fn decorate_expression<D: Dealer + Send>(expr: Expression<u64>, id_pro
         Expression::Variable { name } => {
             let node_id = id_provider.var_to_node(name.clone()).ok_or(format!("orphaned variable"))?;
             dealer.prepare_variable(&node_id, &name).await;
-            Ok(Var(node_id, name))
+            Ok(Var(node_id, name, id_provider.next()))
         }
     }
 }
