@@ -1,20 +1,17 @@
 use crate::crypto::shares::{BeaverShare, Share};
-use crate::protocol::{CirId, NodeId, VarId};
+use crate::protocol::{network::Network, CirId, NodeId, VarId};
 
-use tokio::sync::channel;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-enum DealerMessage {
+enum DealerMessage {}
 
-}
-
-struct Party<N: Network> {
+struct Party<N: Network + Send> {
     dealer: (Sender<DealerMessage>, Receiver<DealerMessage>),
-    network: N
+    network: N,
 }
 
 #[async_trait::async_trait]
-impl<N: Network> crate::protocol::Party for Party<N> {
+impl<N: Network + Send> crate::protocol::Party for Party<N> {
     async fn open(&mut self, id: &CirId, value: Share) -> Share {
         todo!()
     }
