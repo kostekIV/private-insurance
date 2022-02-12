@@ -62,6 +62,9 @@ impl Node {
     /// checks if we have both x - r and [r] for variable under `var_node` if so put x - r + [r] under
     /// var_node in evaluated nodes.
     fn combine_variable_if_full(&mut self, var_node: CirId, calculator: &Calculator) {
+        if self.id == 0 {
+            println!("combine_variable_if_full {:?}", var_node);
+        }
         if !self.variable_salts.contains_key(&var_node)
             || !self.variable_shares.contains_key(&var_node)
         {
@@ -76,6 +79,10 @@ impl Node {
     }
 
     async fn wait_for_calculator(&mut self) -> Calculator {
+        if self.id == 0 {
+            println!("wait_for_calculator");
+        }
+
         let Alpha(alpha) = self
             .alpha_channel
             .recv()
@@ -87,8 +94,18 @@ impl Node {
 
     fn can_proceed(&self, state: &NodeState) -> bool {
         match state {
-            Proceed => true,
-            _ => false,
+            Proceed => {
+                if self.id == 0 {
+                    println!("can_proceed true");
+                };
+                true
+            }
+            _ => {
+                if self.id == 0 {
+                    println!("can_proceed false");
+                };
+                false
+            }
         }
     }
 
@@ -99,6 +116,12 @@ impl Node {
     ) -> NodeState {
         match evaluating {
             MidEvalExpression::AddConstant(s, evaluated_node, cir_id) => {
+                if self.id == 0 {
+                    println!(
+                        "MidEvalExpression::AddConstant {:?} {:?}",
+                        evaluated_node, cir_id
+                    );
+                }
                 let evaluated = self
                     .evaluated
                     .remove(evaluated_node)
@@ -109,6 +132,9 @@ impl Node {
                 self.evaluated.insert(cir_id.to_string(), v);
             }
             MidEvalExpression::Add(e1, e2, cir_id) => {
+                if self.id == 0 {
+                    println!("MidEvalExpression::Add {:?}", cir_id);
+                }
                 let ev1 = self
                     .evaluated
                     .remove(e1)
@@ -123,6 +149,9 @@ impl Node {
                 self.evaluated.insert(cir_id.to_string(), v);
             }
             MidEvalExpression::MulConstant(s, evaluated_node, cir_id) => {
+                if self.id == 0 {
+                    println!("MidEvalExpression::MulConstant {:?}", cir_id);
+                }
                 let evaluated = self
                     .evaluated
                     .remove(evaluated_node)
@@ -131,8 +160,14 @@ impl Node {
                 let v = calculator.mul_by_const(evaluated, Elem::from(s.clone()));
 
                 self.evaluated.insert(cir_id.to_string(), v);
+                if self.id == 0 {
+                    println!("MidEvalExpression::MulConstant {:?}", cir_id);
+                }
             }
             MidEvalExpression::Mul(e1, e2, cir_id) => {
+                if self.id == 0 {
+                    println!("MidEvalExpression::Mul {:?}", cir_id);
+                }
                 let ev1 = self
                     .evaluated
                     .remove(e1)
@@ -145,6 +180,9 @@ impl Node {
                 return WaitForBeaver(cir_id.to_string(), ev1, ev2);
             }
             MidEvalExpression::Var(cir_id) => {
+                if self.id == 0 {
+                    println!("MidEvalExpression::Var {:?}", cir_id);
+                }
                 if !self.evaluated.contains_key(cir_id) {
                     return WaitForVariable(cir_id.to_string());
                 }
@@ -226,7 +264,7 @@ impl Node {
         let mut state = Proceed;
 
         let circuit_nodes = exp.into_ordered();
-        let mut idx = 1;
+        let mut idx = 0;
 
         loop {
             // everything evaluated
@@ -313,7 +351,7 @@ impl Node {
                 NodeEvents::NodeVariableReady(c_id, s) => {
                     if !self.variable_salts.contains_key(&c_id) {
                         log::debug!("got twice value for {}", c_id);
-                        return;
+                        continue;
                     }
 
                     self.variable_salts.insert(c_id.clone(), s);
@@ -329,7 +367,7 @@ impl Node {
                 NodeEvents::NodeVariableShareReady(c_id, s) => {
                     if !self.variable_shares.contains_key(&c_id) {
                         log::debug!("got twice value for {}", c_id);
-                        return;
+                        continue;
                     }
 
                     self.variable_shares.insert(c_id.clone(), s);

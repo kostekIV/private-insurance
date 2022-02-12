@@ -59,16 +59,7 @@ impl Calculator {
 mod tests {
     use super::*;
     use crate::crypto::shares::{self, Elems, Shares};
-    use ff::{Field, PrimeField};
-
-    fn get_shares(shares: &Elems, alpha: &Elems) -> Shares {
-        let secret = shares::sum_elems(shares);
-        shares
-            .iter()
-            .zip(alpha.iter())
-            .map(|(b_s, alpha_s)| (*b_s, *alpha_s * secret))
-            .collect()
-    }
+    use ff::Field;
 
     #[test]
     fn test_add() {

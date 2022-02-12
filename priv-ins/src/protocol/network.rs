@@ -57,6 +57,9 @@ pub fn setup_network(n: u32) -> Vec<ChannelNetwork> {
 #[async_trait::async_trait]
 impl Network for ChannelNetwork {
     fn send_to(&mut self, msg: NetworkMessage) {
+        if self.id == 0 {
+            println!("Network::send_to {:?}", msg.0);
+        }
         if let Some(sender) = self.peers.get(&msg.0) {
             sender.send((self.id, msg.1)).expect("Should be open");
         }
@@ -65,8 +68,10 @@ impl Network for ChannelNetwork {
     async fn receive(&mut self) -> Option<NetworkMessage> {
         self.receiver.recv().await
     }
-
     fn broadcast(&mut self, msg: Msg) {
+        if self.id == 0 {
+            println!("Network::broadcast");
+        }
         for sender in self.peers.values() {
             sender.send((self.id, msg.clone())).expect("Should be open");
         }
