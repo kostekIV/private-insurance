@@ -29,28 +29,25 @@ fn get_cors() -> CorsMiddleware {
 }
 
 #[tokio::main]
-async fn main() -> tide::Result<()> {
-    tide::log::with_level(LevelFilter::Debug);
-    let mut app = tide::new();
-
-    app.at("/exp").post(expression);
-
-    app.with(get_cors());
-    app.listen("127.0.0.1:8080").await?;
-
-    Ok(())
+async fn main() {
+    run_nodes().await;
 }
 
 async fn run_nodes() {
     let n_parties = 5;
 
     let networks = setup_network(n_parties);
-    let (senders, receivers): (Vec<_>, Vec<_>) = (0..n_parties).map(|_| unbounded_channel()).unzip();
+    let (senders, receivers): (Vec<_>, Vec<_>) =
+        (0..n_parties).map(|_| unbounded_channel()).unzip();
     let (cmd_tx, cmd_rx) = unbounded_channel();
 
     let dealer = TrustedDealer::new(
         n_parties as u8,
-        senders.into_iter().enumerate().map(|(i, s)| (i as u64, s)).collect(),
+        senders
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| (i as u64, s))
+            .collect(),
         cmd_rx,
     );
 
@@ -91,7 +88,9 @@ async fn run_nodes() {
             }),
             op: Add,
         };
-        let variables = (0..n_parties).map(|id| (id.to_string(), id as u64)).collect();
+        let variables = (0..n_parties)
+            .map(|id| (id.to_string(), id as u64))
+            .collect();
         let our_variables = HashMap::from([(id.to_string(), (id * 10) as u64)]);
         let config = NodeConfig {
             id: id as u64,

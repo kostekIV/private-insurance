@@ -16,34 +16,32 @@ impl Calculator {
         }
     }
 
+    /// Returns a sum of two shares [x+y]
     pub fn add(&self, mac_1: Share, mac_2: Share) -> Share {
         (mac_1.0 + mac_2.0, mac_1.1 + mac_2.1)
     }
 
+    /// Returns a substraction of two shares [x-y]
     pub fn sub(&self, mac_1: Share, mac_2: Share) -> Share {
         (mac_1.0 - mac_2.0, mac_1.1 - mac_2.1)
     }
 
+    /// Returns shares [x-a] and [y-b] that need to be opened for multiplication
     pub fn mul_prepare(&self, mac_1: Share, mac_2: Share, beaver: BeaverShare) -> (Share, Share) {
         (self.sub(mac_1, beaver.0), self.sub(mac_2, beaver.1))
     }
 
-    pub fn mul(
-        &self,
-        mac_1: Share,
-        mac_2: Share,
-        opened_1: Elem,
-        opened_2: Elem,
-        beaver_c: Share,
-    ) -> Share {
-        let mac_1 = self.mul_by_const(mac_1, opened_2);
-        let mac_2 = self.mul_by_const(mac_2, opened_1);
+    /// Multiplies beaver share with opened [x-a] and [y-b]
+    pub fn mul(&self, beaver: BeaverShare, opened_1: Elem, opened_2: Elem) -> Share {
+        let mac_1 = self.mul_by_const(beaver.0, opened_2);
+        let mac_2 = self.mul_by_const(beaver.1, opened_1);
         let opened = opened_1 * opened_2;
         let result = self.add(mac_1, mac_2);
-        let result = self.add(result, beaver_c);
+        let result = self.add(result, beaver.2);
         self.add_const(result, opened)
     }
 
+    /// Adds opened a element to share [x]
     pub fn add_const(&self, mac: Share, share: Elem) -> Share {
         (
             if self.id == 0 { mac.0 + share } else { mac.0 },
@@ -51,6 +49,7 @@ impl Calculator {
         )
     }
 
+    /// Multiplies share [x] by opened element a
     pub fn mul_by_const(&self, mac: Share, share: Elem) -> Share {
         (mac.0 * share, mac.1 * share)
     }
@@ -251,13 +250,12 @@ mod tests {
 
         let macs_a: Vec<_> = beaver_shares.iter().map(|b| b.0).collect();
         let macs_b: Vec<_> = beaver_shares.iter().map(|b| b.1).collect();
-        let macs_c: Vec<_> = beaver_shares.iter().map(|b| b.2).collect();
         let macs: Vec<_> = macs_a
             .iter()
             .zip(macs_b.iter())
             .zip(calculators.iter())
-            .zip(macs_c.iter())
-            .map(|(((m_a, m_b), c), m_c)| c.mul(*m_a, *m_b, a - beaver_a, b - beaver_b, *m_c))
+            .zip(beaver_shares.iter())
+            .map(|(((m_a, m_b), c), beaver)| c.mul(*beaver, a - beaver_a, b - beaver_b))
             .collect();
 
         let shared = macs.iter().fold(Elem::zero(), |a, &b| a + b.0);

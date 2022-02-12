@@ -1,5 +1,5 @@
 use crate::crypto::Fp;
-use ff::{Field, PrimeField};
+use ff::Field;
 use rand;
 use std::ops::Sub;
 

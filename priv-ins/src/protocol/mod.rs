@@ -110,7 +110,7 @@ pub struct NodeConfig<N: Network> {
     pub id: NodeId,
     pub n_parties: u8,
     pub network: N,
-    pub dealer: (Sender<DealerCommands>, Receiver<DealerEvents>),
+    pub dealer: (Sender<(NodeId, DealerCommands)>, Receiver<DealerEvents>),
     pub expression: Expression<u64>,
     pub variables: HashMap<String, NodeId>,
     pub our_variables: HashMap<String, u64>,
@@ -145,6 +145,7 @@ pub async fn run_node<N: Network + 'static + Send>(config: NodeConfig<N>) {
 
     let mut node = Node::new(id, alpha_rx, node_cmd_tx, node_events_rx, variables);
     let mut party = Party::new(
+        id,
         dealer,
         alpha_tx,
         node_cmd_rx,

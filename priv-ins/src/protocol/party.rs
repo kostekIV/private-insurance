@@ -10,7 +10,8 @@ use futures::prelude::*;
 use tokio::sync::mpsc::{UnboundedReceiver as Receiver, UnboundedSender as Sender};
 
 pub struct Party<N: Network + Send> {
-    dealer: (Sender<DealerCommands>, Receiver<DealerEvents>),
+    id: NodeId,
+    dealer: (Sender<(NodeId, DealerCommands)>, Receiver<DealerEvents>),
     alpha_channel: Sender<Alpha>,
     node_commands: Receiver<NodeCommands>,
     node_events: Sender<NodeEvents>,
@@ -22,7 +23,8 @@ pub struct Party<N: Network + Send> {
 
 impl<N: Network + Send> Party<N> {
     pub fn new(
-        dealer: (Sender<DealerCommands>, Receiver<DealerEvents>),
+        id: NodeId,
+        dealer: (Sender<(NodeId, DealerCommands)>, Receiver<DealerEvents>),
         alpha_channel: Sender<Alpha>,
         node_commands: Receiver<NodeCommands>,
         node_events: Sender<NodeEvents>,
@@ -30,6 +32,7 @@ impl<N: Network + Send> Party<N> {
         n_parties: u8,
     ) -> Self {
         Self {
+            id,
             dealer,
             alpha_channel,
             node_commands,
@@ -93,21 +96,21 @@ impl<N: Network + Send> Party<N> {
                             self.network.broadcast(Msg::OpenShare(cir_id, share));
                         },
                         NodeCommands::OpenSelfInput(v_id) => {
-                            self.dealer.0.send(
+                            self.dealer.0.send((self.id,
                                 DealerCommands::NodeOpenSelfInput(v_id)
-                            ).expect("Send should succeed");
+                            )).expect("Send should succeed");
                         },
                         NodeCommands::NeedBeaver(cir_id) => {
-                            self.dealer.0.send(
-                                DealerCommands::BeaverFor(cir_id)
+                            self.dealer.0.send((self.id,
+                                DealerCommands::BeaverFor(cir_id))
                             ).expect("Send should succeed");
                         }
                         NodeCommands::OpenSelfShare(s, cir_id) => {
                             self.network.broadcast(Msg::OpenVariable(cir_id, s))
                         },
                         NodeCommands::NeedAlpha => {
-                            self.dealer.0.send(
-                                DealerCommands::NeedAlpha
+                            self.dealer.0.send((self.id,
+                                DealerCommands::NeedAlpha)
                             ).expect("Send should succeed");
                         }
                     }
