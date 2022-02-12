@@ -1,6 +1,6 @@
 use crate::crypto::shares::{Elem, Share};
 use crate::expressions::{BinaryOp, Expression};
-use crate::protocol::{CirId, Dealer, NodeId, Provider, VarId};
+use crate::protocol::{CirId, NodeId, Provider, VarId};
 use std::collections::HashMap;
 use std::iter;
 

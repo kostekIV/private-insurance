@@ -167,7 +167,7 @@ impl Node {
 
     pub async fn run(mut self, exp: DecoratedExpression) {
         self.party_commands
-            .send(NodeCommands::NeedAlphaFor(self.id));
+            .send(NodeCommands::NeedAlpha);
 
         // announce need for beaver for this circuit nodes
         for mul_id in exp.mul_ids() {
