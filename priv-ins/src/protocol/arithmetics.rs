@@ -63,7 +63,7 @@ mod tests {
     use ff::{Field, PrimeField};
 
     fn get_shares(shares: &Elems, alpha: &Elems) -> Shares {
-        let secret = shares::sum_shares(shares);
+        let secret = shares::sum_elems(shares);
         shares
             .iter()
             .zip(alpha.iter())
@@ -232,8 +232,8 @@ mod tests {
             (a.0 + b.0 .1, a.1 + b.1 .1)
         });
 
-        let beaver_a = shares::sum_shares(&beaver.0);
-        let beaver_b = shares::sum_shares(&beaver.1);
+        let beaver_a = shares::sum_elems(&beaver.0);
+        let beaver_b = shares::sum_elems(&beaver.1);
         assert_eq!(shared.0, a - beaver_a);
         assert_eq!(shared.1, b - beaver_b);
 
@@ -256,8 +256,8 @@ mod tests {
             .collect();
         let beaver = shares::random_beaver(n_parties);
 
-        let beaver_a = shares::sum_shares(&beaver.0);
-        let beaver_b = shares::sum_shares(&beaver.1);
+        let beaver_a = shares::sum_elems(&beaver.0);
+        let beaver_b = shares::sum_elems(&beaver.1);
 
         let macs_a = get_shares(&beaver.0, &alpha_shares);
         let macs_b = get_shares(&beaver.1, &alpha_shares);

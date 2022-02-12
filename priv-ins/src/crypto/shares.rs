@@ -12,7 +12,7 @@ pub type Beaver = (Elems, Elems, Elems);
 
 pub fn shares_from_secret(secret: &Elem, n_parties: u8) -> Elems {
     let mut shares = random_shares(n_parties - 1);
-    let sum = sum_shares(&shares);
+    let sum = sum_elems(&shares);
 
     shares.push(secret.sub(sum));
     shares
@@ -43,9 +43,10 @@ pub fn random_beaver(n_parties: u8) -> Beaver {
     )
 }
 
-pub fn sum_shares(shares: &Elems) -> Elem {
-    shares.iter().fold(Elem::zero(), |a, &b| a + b)
+pub fn sum_elems(elems: &Elems) -> Elem {
+    elems.iter().fold(Elem::zero(), |a, &b| a + b)
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -56,13 +57,13 @@ mod tests {
         let shares = shares_from_secret(&Elem::from(10), 100);
 
         assert_eq!(100, shares.len());
-        assert_eq!(Elem::from(10), sum_shares(&shares))
+        assert_eq!(Elem::from(10), sum_elems(&shares))
     }
 
     #[test]
     fn generate_beaver_correctly() {
         let (a, b, c) = random_beaver(100);
 
-        assert_eq!(sum_shares(&a) * sum_shares(&b), sum_shares(&c));
+        assert_eq!(sum_elems(&a) * sum_elems(&b), sum_elems(&c));
     }
 }
