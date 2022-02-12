@@ -1,13 +1,13 @@
 use crate::crypto::Fp;
-use ff::{PrimeField, Field};
-use std::ops::Sub;
+use ff::{Field, PrimeField};
 use rand;
+use std::ops::Sub;
 
 pub type Share = Fp;
 pub type Shares = Vec<Share>;
-pub type BeaverShare = (Share, Share, Share);
+pub type Mac = (Share, Share);
+pub type BeaverShare = (Mac, Mac, Mac);
 pub type Beaver = (Shares, Shares, Shares);
-
 
 pub fn shares_from_secret(secret: &Fp, n_parties: u8) -> Shares {
     let mut shares = random_shares(n_parties - 1);
@@ -75,5 +75,3 @@ mod tests {
         assert_eq!(sum_shares(&a) * sum_shares(&b), sum_shares(&c));
     }
 }
-
-

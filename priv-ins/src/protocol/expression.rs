@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-use std::iter;
 use crate::crypto::shares::Share;
 use crate::expressions::{BinaryOp, Expression};
 use crate::protocol::{CirId, Dealer, NodeId, Provider, VarId};
-
+use std::collections::HashMap;
+use std::iter;
 
 type BExpression = Box<DecoratedExpression>;
 
@@ -25,7 +24,6 @@ pub enum DecoratedExpression {
     Constant(Share, CirId),
 }
 
-
 /// Expression repr after processing, all non const expressions are removed and substituted for ids
 pub enum MidEvalExpression {
     AddConstant(Share, CirId, CirId),
@@ -39,35 +37,32 @@ impl MidEvalExpression {
     /// returns circuit node id
     pub fn cir_id(&self) -> CirId {
         match self {
-            MidEvalExpression::AddConstant(_, _, id) => { id.clone() }
-            MidEvalExpression::Add(_, _, id) => { id.clone() }
-            MidEvalExpression::Mul(_, _, id) => { id.clone() }
-            MidEvalExpression::MulConstant(_, _, id) => { id.clone() }
-            MidEvalExpression::Var(id) => { id.clone() }
+            MidEvalExpression::AddConstant(_, _, id) => id.clone(),
+            MidEvalExpression::Add(_, _, id) => id.clone(),
+            MidEvalExpression::Mul(_, _, id) => id.clone(),
+            MidEvalExpression::MulConstant(_, _, id) => id.clone(),
+            MidEvalExpression::Var(id) => id.clone(),
         }
     }
 }
-
 
 impl DecoratedExpression {
     /// returns circuit node id
     pub fn cir_id(&self) -> CirId {
         match self {
-            DecoratedExpression::AddConstant(_, _, id) => { id.clone() }
-            DecoratedExpression::Add(_, _, id) => { id.clone() }
-            DecoratedExpression::Mul(_, _, id) => { id.clone() }
-            DecoratedExpression::MulConstant(_, _, id) => { id.clone() }
-            DecoratedExpression::Var(_, _, id) => { id.clone() }
-            DecoratedExpression::Constant(_, id) => { id.clone() }
+            DecoratedExpression::AddConstant(_, _, id) => id.clone(),
+            DecoratedExpression::Add(_, _, id) => id.clone(),
+            DecoratedExpression::Mul(_, _, id) => id.clone(),
+            DecoratedExpression::MulConstant(_, _, id) => id.clone(),
+            DecoratedExpression::Var(_, _, id) => id.clone(),
+            DecoratedExpression::Constant(_, id) => id.clone(),
         }
     }
 
     /// returns all ids of multiplication in expression
     pub fn mul_ids(&self) -> Vec<CirId> {
         match self {
-            DecoratedExpression::AddConstant(_, e, _) => {
-                e.mul_ids()
-            }
+            DecoratedExpression::AddConstant(_, e, _) => e.mul_ids(),
             DecoratedExpression::Add(e1, e2, _) => {
                 let mut x = e1.mul_ids();
                 x.extend(e2.mul_ids());
@@ -79,19 +74,15 @@ impl DecoratedExpression {
                 x.push(cir_id.clone());
                 x
             }
-            DecoratedExpression::MulConstant(_, e, _) => {
-                e.mul_ids()
-            }
-            _ => vec![]
+            DecoratedExpression::MulConstant(_, e, _) => e.mul_ids(),
+            _ => vec![],
         }
     }
 
     /// returns all ids of variables that belong to node
     pub fn self_var_ids(&self, node_id: NodeId) -> Vec<CirId> {
         match self {
-            DecoratedExpression::AddConstant(_, e, _) => {
-                e.self_var_ids(node_id)
-            }
+            DecoratedExpression::AddConstant(_, e, _) => e.self_var_ids(node_id),
             DecoratedExpression::Add(e1, e2, _) => {
                 let mut x = e1.self_var_ids(node_id);
                 x.extend(e2.self_var_ids(node_id));
@@ -102,9 +93,7 @@ impl DecoratedExpression {
                 x.extend(e2.self_var_ids(node_id));
                 x
             }
-            DecoratedExpression::MulConstant(_, e, _) => {
-                e.self_var_ids(node_id)
-            }
+            DecoratedExpression::MulConstant(_, e, _) => e.self_var_ids(node_id),
             DecoratedExpression::Var(other, _, cir_id) => {
                 if node_id == *other {
                     vec![cir_id.clone()]
@@ -112,7 +101,9 @@ impl DecoratedExpression {
                     vec![]
                 }
             }
-            DecoratedExpression::Constant(_, _) => { vec![] }
+            DecoratedExpression::Constant(_, _) => {
+                vec![]
+            }
         }
     }
 
@@ -123,8 +114,7 @@ impl DecoratedExpression {
             DecoratedExpression::AddConstant(s, e, cir_id) => {
                 let e_cir_id = e.cir_id();
 
-                let mut ord = e
-                    .into_ordered();
+                let mut ord = e.into_ordered();
                 ord.push(MidEvalExpression::AddConstant(s, e_cir_id, cir_id));
 
                 ord
@@ -168,42 +158,61 @@ impl DecoratedExpression {
     }
 }
 
-
 /// Transform raw expression into
-pub fn decorate_expression(expr: Expression<u64>, id_provider: &mut Provider) -> Result<DecoratedExpression, String> {
+pub fn decorate_expression(
+    expr: Expression<u64>,
+    id_provider: &mut Provider,
+) -> Result<DecoratedExpression, String> {
     match expr {
-        Expression::Number { number } => {
-            Ok(DecoratedExpression::Constant(Share::from(number), id_provider.next()))
-        }
+        Expression::Number { number } => Ok(DecoratedExpression::Constant(
+            Share::from(number),
+            id_provider.next(),
+        )),
         Expression::BinOp { left, right, op } => {
             let left = decorate_expression(*left, id_provider)?;
             let right = decorate_expression(*right, id_provider)?;
 
             match op {
-                BinaryOp::Add => {
-                    match (left, right) {
-                        (DecoratedExpression::Constant(s1, _), DecoratedExpression::Constant(s2, _)) => { Ok(DecoratedExpression::Constant(s1 + s2, id_provider.next())) }
-                        (DecoratedExpression::Constant(s1, _), x) => { Ok(DecoratedExpression::AddConstant(s1, Box::new(x), id_provider.next())) }
-                        (x, DecoratedExpression::Constant(s1, _)) => { Ok(DecoratedExpression::AddConstant(s1, Box::new(x), id_provider.next())) }
-                        (x, y) => { Ok(DecoratedExpression::Add(Box::new(x), Box::new(y), id_provider.next())) }
+                BinaryOp::Add => match (left, right) {
+                    (
+                        DecoratedExpression::Constant(s1, _),
+                        DecoratedExpression::Constant(s2, _),
+                    ) => Ok(DecoratedExpression::Constant(s1 + s2, id_provider.next())),
+                    (DecoratedExpression::Constant(s1, _), x) => Ok(
+                        DecoratedExpression::AddConstant(s1, Box::new(x), id_provider.next()),
+                    ),
+                    (x, DecoratedExpression::Constant(s1, _)) => Ok(
+                        DecoratedExpression::AddConstant(s1, Box::new(x), id_provider.next()),
+                    ),
+                    (x, y) => Ok(DecoratedExpression::Add(
+                        Box::new(x),
+                        Box::new(y),
+                        id_provider.next(),
+                    )),
+                },
+                BinaryOp::Mul => match (left, right) {
+                    (
+                        DecoratedExpression::Constant(s1, _),
+                        DecoratedExpression::Constant(s2, _),
+                    ) => Ok(DecoratedExpression::Constant(s1 + s2, id_provider.next())),
+                    (DecoratedExpression::Constant(s1, _), x) => Ok(
+                        DecoratedExpression::MulConstant(s1, Box::new(x), id_provider.next()),
+                    ),
+                    (x, DecoratedExpression::Constant(s1, _)) => Ok(
+                        DecoratedExpression::MulConstant(s1, Box::new(x), id_provider.next()),
+                    ),
+                    (x, y) => {
+                        let id = id_provider.next();
+                        Ok(DecoratedExpression::Mul(Box::new(x), Box::new(y), id))
                     }
-                }
-                BinaryOp::Mul => {
-                    match (left, right) {
-                        (DecoratedExpression::Constant(s1, _), DecoratedExpression::Constant(s2, _)) => { Ok(DecoratedExpression::Constant(s1 + s2, id_provider.next())) }
-                        (DecoratedExpression::Constant(s1, _), x) => { Ok(DecoratedExpression::MulConstant(s1, Box::new(x), id_provider.next())) }
-                        (x, DecoratedExpression::Constant(s1, _)) => { Ok(DecoratedExpression::MulConstant(s1, Box::new(x), id_provider.next())) }
-                        (x, y) => {
-                            let id = id_provider.next();
-                            Ok(DecoratedExpression::Mul(Box::new(x), Box::new(y), id))
-                        }
-                    }
-                }
-                _ => Err(format!("Only add and mul for now"))
+                },
+                _ => Err(format!("Only add and mul for now")),
             }
         }
         Expression::Variable { name } => {
-            let node_id = id_provider.var_to_node(name.clone()).ok_or(format!("orphaned variable"))?;
+            let node_id = id_provider
+                .var_to_node(name.clone())
+                .ok_or(format!("orphaned variable"))?;
             Ok(DecoratedExpression::Var(node_id, name, id_provider.next()))
         }
     }
@@ -220,10 +229,37 @@ mod tests {
 
     fn test_expr() -> DecoratedExpression {
         DecoratedExpression::Add(
-            Box::new(DecoratedExpression::MulConstant(dummy(), Box::new(DecoratedExpression::Mul(
-                Box::new(DecoratedExpression::Var(1, "2".to_string(), "1".to_string())), Box::new(DecoratedExpression::Var(1, "3".to_string(), "2".to_string())), "3".to_string())),
-                                                      "4".to_string())), Box::new(DecoratedExpression::Mul(
-                Box::new(DecoratedExpression::Var(3, "5".to_string(), "5".to_string())), Box::new(DecoratedExpression::Var(1, "10".to_string(), "6".to_string())), "7".to_string())), "8".to_string(),
+            Box::new(DecoratedExpression::MulConstant(
+                dummy(),
+                Box::new(DecoratedExpression::Mul(
+                    Box::new(DecoratedExpression::Var(
+                        1,
+                        "2".to_string(),
+                        "1".to_string(),
+                    )),
+                    Box::new(DecoratedExpression::Var(
+                        1,
+                        "3".to_string(),
+                        "2".to_string(),
+                    )),
+                    "3".to_string(),
+                )),
+                "4".to_string(),
+            )),
+            Box::new(DecoratedExpression::Mul(
+                Box::new(DecoratedExpression::Var(
+                    3,
+                    "5".to_string(),
+                    "5".to_string(),
+                )),
+                Box::new(DecoratedExpression::Var(
+                    1,
+                    "10".to_string(),
+                    "6".to_string(),
+                )),
+                "7".to_string(),
+            )),
+            "8".to_string(),
         )
     }
 
@@ -256,4 +292,3 @@ mod tests {
         assert_eq!(vec!["1", "2", "3", "4", "5", "6", "7", "8"], ordered_ids);
     }
 }
-

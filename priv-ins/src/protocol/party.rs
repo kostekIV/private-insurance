@@ -1,12 +1,13 @@
+use crate::crypto::shares::{BeaverShare, Share, Shares};
+use crate::protocol::network::{Msg, Network};
+use crate::protocol::{
+    CirId, DealerCommands, DealerEvents, NodeCommands, NodeEvents, NodeId, VarId,
+};
 use std::collections::{HashMap, HashSet};
 use tokio::select;
-use crate::crypto::shares::{BeaverShare, Share, Shares};
-use crate::protocol::{CirId, DealerCommands, DealerEvents, NodeCommands, NodeEvents, NodeId, VarId};
-use crate::protocol::network::{Msg, Network};
 
-use tokio::sync::mpsc::{UnboundedReceiver as Receiver, UnboundedSender as Sender};
 use futures::prelude::*;
-
+use tokio::sync::mpsc::{UnboundedReceiver as Receiver, UnboundedSender as Sender};
 
 struct Party<N: Network + Send> {
     dealer: (Sender<DealerCommands>, Receiver<DealerEvents>),
@@ -26,7 +27,11 @@ impl<N: Network + Send> Party<N> {
         let opened_cirs = self.opened_shares.entry(from).or_insert(HashSet::new());
 
         if !opened_cirs.insert(cid.clone()) {
-            log::debug!("node {} tried to open more than once its share for circuit node {}", from, cid.clone());
+            log::debug!(
+                "node {} tried to open more than once its share for circuit node {}",
+                from,
+                cid.clone()
+            );
 
             // Return notready to not trigger twice ready logic.
             return false;

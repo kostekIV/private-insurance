@@ -1,14 +1,15 @@
+use crate::crypto::shares::{sum_shares, BeaverShare, Share, Shares};
+use crate::protocol::{CirId, NodeCommands, NodeEvents, NodeId, VarId};
+use async_recursion::async_recursion;
 use std::collections::HashMap;
 use std::ops::Sub;
-use async_recursion::async_recursion;
-use crate::crypto::shares::{BeaverShare, Share, Shares, sum_shares};
-use crate::protocol::{CirId, NodeCommands, NodeEvents, NodeId, VarId};
 
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
+use crate::protocol::expression::{DecoratedExpression, MidEvalExpression};
 use futures::prelude::*;
 use tokio::select;
-use crate::protocol::expression::{DecoratedExpression, MidEvalExpression};
-
+use tokio::sync::mpsc::{
+    unbounded_channel, UnboundedReceiver as Receiver, UnboundedSender as Sender,
+};
 
 pub struct Node {
     id: NodeId,
@@ -26,7 +27,9 @@ impl Node {
     /// checks if we have both x - r and [r] for variable under `var_node` if so put x - r + [r] under
     /// var_node in evaluated nodes.
     fn combine_variable_if_full(&mut self, var_node: CirId) {
-        if !self.variable_salts.contains_key(&var_node) || !self.variable_shares.contains_key(&var_node) {
+        if !self.variable_salts.contains_key(&var_node)
+            || !self.variable_shares.contains_key(&var_node)
+        {
             return;
         }
 
@@ -64,7 +67,8 @@ impl Node {
 
             match evaluating {
                 MidEvalExpression::AddConstant(s, evaluated_node, cir_id) => {
-                    let evaluated = self.evaluated
+                    let evaluated = self
+                        .evaluated
                         .get(evaluated_node)
                         .expect("we should have already evaluated it");
 
@@ -74,10 +78,12 @@ impl Node {
                     continue;
                 }
                 MidEvalExpression::Add(e1, e2, cir_id) => {
-                    let ev1 = self.evaluated
+                    let ev1 = self
+                        .evaluated
                         .get(e1)
                         .expect("we should have already evaluated it");
-                    let ev2 = self.evaluated
+                    let ev2 = self
+                        .evaluated
                         .get(e2)
                         .expect("we should have already evaluated it");
 
@@ -87,7 +93,8 @@ impl Node {
                     continue;
                 }
                 MidEvalExpression::MulConstant(s, evaluated_node, cir_id) => {
-                    let evaluated = self.evaluated
+                    let evaluated = self
+                        .evaluated
                         .get(evaluated_node)
                         .expect("we should have already evaluated it");
 
@@ -97,10 +104,12 @@ impl Node {
                     continue;
                 }
                 MidEvalExpression::Mul(e1, e2, cir_id) => {
-                    let ev1 = self.evaluated
+                    let ev1 = self
+                        .evaluated
                         .get(e1)
                         .expect("we should have already evaluated it");
-                    let ev2 = self.evaluated
+                    let ev2 = self
+                        .evaluated
                         .get(e2)
                         .expect("we should have already evaluated it");
 
@@ -144,7 +153,9 @@ impl Node {
 
                     let xr = x.sub(r);
                     // send to everyone x-r
-                    self.party_commands.send(NodeCommands::OpenSelfShare(xr, c_id.clone())).expect("send should succeed");
+                    self.party_commands
+                        .send(NodeCommands::OpenSelfShare(xr, c_id.clone()))
+                        .expect("send should succeed");
                     // evaluate our variable as (x-r) + r_share
                     self.evaluated.insert(c_id, xr + r_share);
                 }

@@ -1,12 +1,12 @@
-use std::collections::HashMap;
 use crate::crypto::shares::{Beaver, Shares};
 use crate::protocol::{CirId, Dealer, NodeId, VarId};
+use std::collections::HashMap;
 
 struct TrustedDealer {
     n_parties: u8,
     beavers: HashMap<CirId, Beaver>,
     variables: HashMap<VarId, Shares>,
-    variables_ownership: HashMap<VarId, NodeId>
+    variables_ownership: HashMap<VarId, NodeId>,
 }
 
 #[async_trait::async_trait]
@@ -21,10 +21,7 @@ impl Dealer for TrustedDealer {
         let shares = crate::crypto::shares::random_shares(self.n_parties);
 
         self.variables.insert(vid.to_string(), shares);
-        self.variables_ownership.insert(vid.to_string(), nid.clone());
+        self.variables_ownership
+            .insert(vid.to_string(), nid.clone());
     }
-}
-
-struct RemoteDealer {
-
 }

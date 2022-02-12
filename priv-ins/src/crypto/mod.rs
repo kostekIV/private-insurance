@@ -7,5 +7,4 @@ use async_trait::async_trait;
 #[PrimeFieldReprEndianness = "little"]
 pub struct Fp([u64; 4]);
 
-
 pub mod shares;

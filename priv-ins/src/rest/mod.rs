@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::expressions::{eval_expression, Expression};
+use std::collections::HashMap;
 use tide::{Body, Request};
 
 use serde::{Deserialize, Serialize};

@@ -1,15 +1,16 @@
+mod arithmetics;
 mod dealer;
+mod expression;
+mod network;
 mod node;
 mod party;
-mod network;
 mod test;
-mod expression;
 
+use async_recursion::async_recursion;
+use ff::{Field, PrimeField};
 use std::collections::HashMap;
 use std::iter;
-use ff::{Field, PrimeField};
-use std::ops::{Mul};
-use async_recursion::async_recursion;
+use std::ops::Mul;
 
 use crate::crypto::shares::{BeaverShare, Share, Shares};
 use crate::expressions::{BinaryOp, Expression};
@@ -69,7 +70,6 @@ pub enum NodeEvents {
     BeaverFor(CirId, BeaverShare),
 }
 
-
 #[async_trait::async_trait]
 pub trait Dealer {
     /// Creates beaver share for `id`.
@@ -85,10 +85,7 @@ pub struct Provider {
 
 impl Provider {
     pub fn from(var_to_node: HashMap<String, NodeId>) -> Self {
-        Self {
-            id: 0,
-            var_to_node,
-        }
+        Self { id: 0, var_to_node }
     }
 
     pub fn next(&mut self) -> CirId {

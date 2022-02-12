@@ -6,10 +6,10 @@ use crate::rest::expression;
 use tide::http::headers::HeaderValue;
 use tide::log::LevelFilter;
 
-mod expressions;
-mod rest;
 mod crypto;
+mod expressions;
 mod protocol;
+mod rest;
 
 use tide::security::{CorsMiddleware, Origin};
 
