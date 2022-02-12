@@ -8,7 +8,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-struct TrustedDealer {
+pub struct TrustedDealer {
     n_parties: u8,
     alpha: (Elem, Vec<Elem>),
     beavers: HashMap<CirId, Vec<BeaverShare>>,
@@ -18,7 +18,7 @@ struct TrustedDealer {
 }
 
 impl TrustedDealer {
-    fn new(
+    pub fn new(
         n_parties: u8,
         senders: HashMap<NodeId, UnboundedSender<DealerEvents>>,
         receiver: UnboundedReceiver<(NodeId, DealerCommands)>,
@@ -34,7 +34,7 @@ impl TrustedDealer {
         }
     }
 
-    async fn run(mut self) {
+    pub async fn run(mut self) {
         loop {
             match self.receiver.recv().await {
                 Some((node_id, DealerCommands::BeaverFor(cir_id))) => {

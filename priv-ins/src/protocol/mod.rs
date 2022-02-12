@@ -1,9 +1,9 @@
 mod arithmetics;
-mod dealer;
+pub mod dealer;
 mod expression;
-mod network;
-mod node;
-mod party;
+pub mod network;
+pub mod node;
+pub mod party;
 mod test;
 
 use async_recursion::async_recursion;
@@ -107,13 +107,13 @@ impl Provider {
 }
 
 pub struct NodeConfig<N: Network> {
-    id: NodeId,
-    n_parties: u8,
-    network: N,
-    dealer: (Sender<DealerCommands>, Receiver<DealerEvents>),
-    expression: Expression<u64>,
-    variables: HashMap<String, NodeId>,
-    our_variables: HashMap<String, u64>,
+    pub id: NodeId,
+    pub n_parties: u8,
+    pub network: N,
+    pub dealer: (Sender<DealerCommands>, Receiver<DealerEvents>),
+    pub expression: Expression<u64>,
+    pub variables: HashMap<String, NodeId>,
+    pub our_variables: HashMap<String, u64>,
 }
 
 pub async fn run_node<N: Network + 'static + Send>(config: NodeConfig<N>) {
