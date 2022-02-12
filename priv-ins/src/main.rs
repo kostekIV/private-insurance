@@ -1,7 +1,10 @@
 #[macro_use]
 extern crate ff;
+extern crate futures;
+extern crate tokio;
 use crate::rest::expression;
 use tide::http::headers::HeaderValue;
+use tide::log::LevelFilter;
 
 mod expressions;
 mod rest;
@@ -19,7 +22,7 @@ fn get_cors() -> CorsMiddleware {
 
 #[async_std::main]
 async fn main() -> tide::Result<()> {
-    tide::log::start();
+    tide::log::with_level(LevelFilter::Debug);
     let mut app = tide::new();
 
     app.at("/exp").post(expression);

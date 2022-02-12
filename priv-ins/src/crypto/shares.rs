@@ -10,16 +10,21 @@ pub type Beaver = (Shares, Shares, Shares);
 
 
 pub fn shares_from_secret(secret: &Fp, n_parties: u8) -> Shares {
-    let mut shares = vec![];
-    let mut sum = Fp::zero();
+    let mut shares = random_shares(n_parties - 1);
+    let sum = sum_shares(&shares);
 
-    for _ in 0..n_parties - 1 {
+    shares.push(secret.sub(sum));
+    shares
+}
+
+pub fn random_shares(n_parties: u8) -> Shares {
+    let mut shares = vec![];
+
+    for _ in 0..n_parties {
         let si = Share::random(rand::thread_rng());
 
-        sum += si;
         shares.push(si);
     }
-    shares.push(secret.sub(sum));
 
     shares
 }
