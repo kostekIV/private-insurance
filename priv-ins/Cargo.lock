@@ -1198,6 +1198,7 @@ dependencies = [
  "async-trait",
  "ff",
  "futures",
+ "log",
  "num-traits",
  "rand 0.8.4",
  "serde",
