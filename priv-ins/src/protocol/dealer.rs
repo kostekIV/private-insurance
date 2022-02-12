@@ -1,7 +1,4 @@
-use crate::crypto::{
-    shares::{self, BeaverShare, Elem, Shares},
-    Fp,
-};
+use crate::crypto::shares::{self, BeaverShare, Elem};
 use crate::protocol::{CirId, DealerCommands, DealerEvents, NodeId, VarId};
 use ff::Field;
 use std::collections::hash_map::Entry;

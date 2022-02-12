@@ -1,6 +1,6 @@
 use crate::protocol::{network::ChannelNetwork, NodeId};
 use std::collections::HashMap;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{unbounded_channel};
 
 fn setup_network(n: u32) -> Vec<ChannelNetwork> {
     let (senders, receivers): (Vec<_>, Vec<_>) = (0..n).map(|_| unbounded_channel()).unzip();
