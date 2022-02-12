@@ -35,7 +35,7 @@ pub enum DealerEvents {
     /// sends beaver shares for cirid for this node.
     BeaverSharesFor(CirId, BeaverShare),
     /// gives alpha_i, and vec of (var_id, alpha_i * x_j)
-    AlphaFor(Elem, Vec<(CirId, Elem)>),
+    AlphaFor(Elem),
 }
 
 #[derive(Debug)]
@@ -44,7 +44,7 @@ pub enum DealerCommands {
     NodeOpenSelfInput(VarId),
     /// Node needs beaver for cir_id
     BeaverFor(CirId),
-    NeedAlphaFor(NodeId, Vec<CirId>),
+    NeedAlphaFor(NodeId),
 }
 
 #[derive(Debug)]
@@ -57,7 +57,7 @@ pub enum NodeCommands {
     OpenSelfInput(CirId),
     /// Node needs beaver for cir_id
     NeedBeaver(CirId),
-    NeedAlphaFor(NodeId, Vec<CirId>),
+    NeedAlphaFor(NodeId),
 }
 
 #[derive(Debug)]
@@ -72,8 +72,10 @@ pub enum NodeEvents {
     NodeVariableShareReady(CirId, Share),
     /// beaver for node in circuit is ready
     BeaverFor(CirId, BeaverShare),
-    AlphaFor(Elem, Vec<(CirId, Elem)>),
 }
+
+#[derive(Debug)]
+pub struct Alpha(Elem);
 
 #[async_trait::async_trait]
 pub trait Dealer {

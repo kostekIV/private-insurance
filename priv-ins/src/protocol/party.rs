@@ -1,8 +1,6 @@
 use crate::crypto::shares::{BeaverShare, Share, Shares};
 use crate::protocol::network::{Msg, Network};
-use crate::protocol::{
-    CirId, DealerCommands, DealerEvents, NodeCommands, NodeEvents, NodeId, VarId,
-};
+use crate::protocol::{Alpha, CirId, DealerCommands, DealerEvents, NodeCommands, NodeEvents, NodeId, VarId};
 use std::collections::{HashMap, HashSet};
 use tokio::select;
 
@@ -11,6 +9,7 @@ use tokio::sync::mpsc::{UnboundedReceiver as Receiver, UnboundedSender as Sender
 
 struct Party<N: Network + Send> {
     dealer: (Sender<DealerCommands>, Receiver<DealerEvents>),
+    alpha_channel: Sender<Alpha>,
     node_commands: Receiver<NodeCommands>,
     node_events: Sender<NodeEvents>,
     network: N,
@@ -85,9 +84,9 @@ impl<N: Network + Send> Party<N> {
                         NodeCommands::OpenSelfShare(s, cir_id) => {
                             self.network.broadcast(Msg::OpenVariable(cir_id, s))
                         },
-                        NodeCommands::NeedAlphaFor(id, ids) => {
+                        NodeCommands::NeedAlphaFor(id) => {
                             self.dealer.0.send(
-                                DealerCommands::NeedAlphaFor(id, ids)
+                                DealerCommands::NeedAlphaFor(id)
                             ).expect("Send should succeed");
                         }
                     }
@@ -117,10 +116,8 @@ impl<N: Network + Send> Party<N> {
                                 NodeEvents::BeaverFor(cir_id, beaver_shares)
                             ).expect("Send should succeed");
                         }
-                        DealerEvents::AlphaFor(alpha, ms) => {
-                            self.node_events.send(
-                                NodeEvents::AlphaFor(alpha, ms)
-                            ).expect("Send should succeed");
+                        DealerEvents::AlphaFor(alpha) => {
+                            self.alpha_channel.send(Alpha(alpha));
                         }
                     }
                 }

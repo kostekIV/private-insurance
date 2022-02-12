@@ -1,5 +1,5 @@
 use crate::crypto::shares::{sum_shares, BeaverShare, Elem, Share, Shares};
-use crate::protocol::{CirId, NodeCommands, NodeEvents, NodeId, VarId};
+use crate::protocol::{Alpha, CirId, NodeCommands, NodeEvents, NodeId, VarId};
 use async_recursion::async_recursion;
 use std::collections::HashMap;
 use std::ops::Sub;
@@ -14,11 +14,12 @@ use tokio::sync::mpsc::{
 
 pub struct Node {
     id: NodeId,
+    alpha_channel: Receiver<Alpha>,
     party_commands: Sender<NodeCommands>,
     party_events: Receiver<NodeEvents>,
     evaluated: HashMap<CirId, Share>,
     fully_open: HashMap<CirId, Share>,
-    variables: HashMap<CirId, Share>,
+    variables: HashMap<CirId, Elem>,
     beavers: HashMap<CirId, BeaverShare>,
     variable_shares: HashMap<CirId, Share>,
     variable_salts: HashMap<CirId, Elem>,
@@ -40,11 +41,19 @@ impl Node {
         // self.evaluated.insert(var_node, s1 + s2);
     }
 
+    async fn wait_for_calculator(&mut self) -> Calculator {
+        let Alpha(alpha) = self.alpha_channel
+            .recv()
+            .await
+            .expect("Without alpha we are doomed anyway");
+
+        Calculator::new(self.id, alpha)
+    }
+
+
     pub async fn run(mut self, exp: DecoratedExpression) {
         self.party_commands
-            .send(NodeCommands::NeedAlphaFor(self.id, exp.self_var_ids(None)));
-
-        let mut calculator: Option<Calculator> = None;
+            .send(NodeCommands::NeedAlphaFor(self.id));
 
         // announce need for beaver for this circuit nodes
         for mul_id in exp.mul_ids() {
@@ -59,6 +68,8 @@ impl Node {
                 .send(NodeCommands::OpenSelfInput(var_id))
                 .expect("send should succeed");
         }
+
+        let calculator = self.wait_for_calculator().await;
 
         let circuit_nodes = exp.into_ordered();
         let mut idx = 0;
@@ -189,9 +200,6 @@ impl Node {
 
                     self.variable_shares.insert(c_id.clone(), s);
                     self.combine_variable_if_full(c_id);
-                }
-                NodeEvents::AlphaFor(alpha, ms) => {
-                    calculator = Some(Calculator::new(self.id, alpha));
                 }
             }
         }
