@@ -80,7 +80,7 @@ impl DecoratedExpression {
     }
 
     /// returns all ids of variables that belong to node (or all variables if node is none)
-    pub fn self_var_ids(&self, node_id: Option<NodeId>) -> Vec<CirId> {
+    pub fn self_var_ids(&self, node_id: Option<NodeId>) -> Vec<(CirId, VarId)> {
         match self {
             DecoratedExpression::AddConstant(_, e, _) => e.self_var_ids(node_id),
             DecoratedExpression::Add(e1, e2, _) => {
@@ -94,9 +94,9 @@ impl DecoratedExpression {
                 x
             }
             DecoratedExpression::MulConstant(_, e, _) => e.self_var_ids(node_id),
-            DecoratedExpression::Var(other, _, cir_id) => {
+            DecoratedExpression::Var(other, var_id, cir_id) => {
                 if node_id.is_none() || node_id.expect("not none") == *other {
-                    vec![cir_id.clone()]
+                    vec![(cir_id.clone(), var_id.clone())]
                 } else {
                     vec![]
                 }
@@ -274,9 +274,19 @@ mod tests {
     fn returns_var_ids_correctly() {
         let d_expr = test_expr();
 
-        assert_eq!(vec!["1", "2", "6"], d_expr.self_var_ids(Some(1)));
-        assert_eq!(Vec::<CirId>::new(), d_expr.self_var_ids(Some(2)));
-        assert_eq!(vec!["5"], d_expr.self_var_ids(Some(3)));
+        assert_eq!(
+            vec![
+                ("1".to_string(), "2".to_string()),
+                ("2".to_string(), "3".to_string()),
+                ("6".to_string(), "10".to_string())
+            ],
+            d_expr.self_var_ids(Some(1))
+        );
+        assert_eq!(Vec::<(CirId, VarId)>::new(), d_expr.self_var_ids(Some(2)));
+        assert_eq!(
+            vec![("5".to_string(), "5".to_string())],
+            d_expr.self_var_ids(Some(3))
+        );
     }
 
     #[test]

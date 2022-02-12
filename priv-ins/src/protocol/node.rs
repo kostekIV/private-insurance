@@ -1,18 +1,19 @@
-use crate::crypto::shares::{sum_elems, BeaverShare, Elem, Share, Shares, Beaver};
-use crate::protocol::{Alpha, CirId, NodeCommands, NodeEvents, NodeId, sub_id, VarId};
+use crate::crypto::shares::{sum_elems, Beaver, BeaverShare, Elem, Share, Shares};
+use crate::protocol::{sub_id, Alpha, CirId, NodeCommands, NodeEvents, NodeId, VarId};
 use async_recursion::async_recursion;
 use std::collections::HashMap;
 use std::ops::Sub;
 
 use crate::protocol::arithmetics::Calculator;
 use crate::protocol::expression::{DecoratedExpression, MidEvalExpression};
+use crate::protocol::node::NodeState::{
+    HaveBeaver, HaveShares, Proceed, WaitForBeaver, WaitForShares, WaitForVariable,
+};
 use futures::prelude::*;
 use tokio::select;
 use tokio::sync::mpsc::{
     unbounded_channel, UnboundedReceiver as Receiver, UnboundedSender as Sender,
 };
-use crate::protocol::node::NodeState::{HaveBeaver, HaveShares, Proceed, WaitForBeaver, WaitForShares, WaitForVariable};
-
 
 enum NodeState {
     Proceed,
@@ -37,6 +38,26 @@ pub struct Node {
 }
 
 impl Node {
+    pub fn new(
+        id: NodeId,
+        alpha_channel: Receiver<Alpha>,
+        party_commands: Sender<NodeCommands>,
+        party_events: Receiver<NodeEvents>,
+        variables: HashMap<CirId, Elem>,
+    ) -> Self {
+        Self {
+            id,
+            alpha_channel,
+            party_commands,
+            party_events,
+            variables,
+            evaluated: HashMap::new(),
+            fully_open: HashMap::new(),
+            beavers: HashMap::new(),
+            variable_shares: HashMap::new(),
+            variable_salts: HashMap::new(),
+        }
+    }
     /// checks if we have both x - r and [r] for variable under `var_node` if so put x - r + [r] under
     /// var_node in evaluated nodes.
     fn combine_variable_if_full(&mut self, var_node: CirId, calculator: &Calculator) {
@@ -49,11 +70,13 @@ impl Node {
         let s1 = self.variable_shares.remove(&var_node).expect("checked");
         let s2 = self.variable_salts.remove(&var_node).expect("checked");
 
-        self.evaluated.insert(var_node, calculator.add_const(s1, s2));
+        self.evaluated
+            .insert(var_node, calculator.add_const(s1, s2));
     }
 
     async fn wait_for_calculator(&mut self) -> Calculator {
-        let Alpha(alpha) = self.alpha_channel
+        let Alpha(alpha) = self
+            .alpha_channel
             .recv()
             .await
             .expect("Without alpha we are doomed anyway");
@@ -61,16 +84,18 @@ impl Node {
         Calculator::new(self.id, alpha)
     }
 
-
     fn can_proceed(&self, state: &NodeState) -> bool {
         match state {
-            Proceed => { true }
-            _ => false
+            Proceed => true,
+            _ => false,
         }
     }
 
-
-    fn try_proceed(&mut self, calculator: &Calculator, evaluating: &MidEvalExpression) -> NodeState {
+    fn try_proceed(
+        &mut self,
+        calculator: &Calculator,
+        evaluating: &MidEvalExpression,
+    ) -> NodeState {
         match evaluating {
             MidEvalExpression::AddConstant(s, evaluated_node, cir_id) => {
                 let evaluated = self
@@ -120,7 +145,7 @@ impl Node {
             }
             MidEvalExpression::Var(cir_id) => {
                 if !self.evaluated.contains_key(cir_id) {
-                    return WaitForVariable(cir_id.to_string())
+                    return WaitForVariable(cir_id.to_string());
                 }
             }
             _ => {}
@@ -129,29 +154,45 @@ impl Node {
         Proceed
     }
 
-
-    async fn handle_beaver(&mut self, calculator: &Calculator, cir_id: CirId, ev1: Share, ev2: Share) -> NodeState {
+    async fn handle_beaver(
+        &mut self,
+        calculator: &Calculator,
+        cir_id: CirId,
+        ev1: Share,
+        ev2: Share,
+    ) -> NodeState {
         let beaver = self.beavers.remove(&cir_id).expect("checked");
 
-        let (e, f) = calculator.mul_prepare(Share::from(ev1.clone()), Share::from(ev2.clone()), BeaverShare::from(beaver.clone()));
+        let (e, f) = calculator.mul_prepare(
+            Share::from(ev1.clone()),
+            Share::from(ev2.clone()),
+            BeaverShare::from(beaver.clone()),
+        );
 
         let e_id = sub_id(&cir_id, &"e".to_string());
         let f_id = sub_id(&cir_id, &"f".to_string());
 
-        self.party_commands.send(
-            NodeCommands::OpenShare(e, e_id.to_string())
-        ).expect("Send should succeed");
+        self.party_commands
+            .send(NodeCommands::OpenShare(e, e_id.to_string()))
+            .expect("Send should succeed");
 
-        self.party_commands.send(
-            NodeCommands::OpenShare(f, f_id.to_string())
-        ).expect("Send should succeed");
-
+        self.party_commands
+            .send(NodeCommands::OpenShare(f, f_id.to_string()))
+            .expect("Send should succeed");
 
         WaitForShares(cir_id, e_id, f_id, ev1, ev2, beaver.2)
     }
 
-
-    fn handle_shares(&mut self, calculator: &Calculator, cir_id: CirId, e_id: CirId, f_id: CirId, ev1: Share, ev2: Share, beaver_c: Share) -> NodeState {
+    fn handle_shares(
+        &mut self,
+        calculator: &Calculator,
+        cir_id: CirId,
+        e_id: CirId,
+        f_id: CirId,
+        ev1: Share,
+        ev2: Share,
+        beaver_c: Share,
+    ) -> NodeState {
         let e_shares = self.fully_open.remove(&e_id).expect("checked");
         let f_shares = self.fully_open.remove(&f_id).expect("checked");
 
@@ -164,10 +205,8 @@ impl Node {
         Proceed
     }
 
-
     pub async fn run(mut self, exp: DecoratedExpression) {
-        self.party_commands
-            .send(NodeCommands::NeedAlpha);
+        self.party_commands.send(NodeCommands::NeedAlpha);
 
         // announce need for beaver for this circuit nodes
         for mul_id in exp.mul_ids() {
@@ -177,14 +216,13 @@ impl Node {
         }
 
         // announce to delear our variable
-        for var_id in exp.self_var_ids(Some(self.id)) {
+        for (var_id, _) in exp.self_var_ids(Some(self.id)) {
             self.party_commands
                 .send(NodeCommands::OpenSelfInput(var_id))
                 .expect("send should succeed");
         }
 
         let calculator = self.wait_for_calculator().await;
-
 
         let mut state = Proceed;
 
@@ -211,17 +249,15 @@ impl Node {
                     } else {
                         WaitForBeaver(cir_id, s1, s2)
                     }
-                },
+                }
                 WaitForShares(c, e, f, s1, s2, beaver_c) => {
                     if self.fully_open.contains_key(&e) && self.fully_open.contains_key(&f) {
                         HaveShares(c, e, f, s1, s2, beaver_c)
                     } else {
                         WaitForShares(c, e, f, s1, s2, beaver_c)
                     }
-                },
-                state => {
-                    state
                 }
+                state => state,
             };
 
             if self.can_proceed(&state) {
@@ -234,11 +270,11 @@ impl Node {
             state = match state {
                 HaveBeaver(cir_id, ev1, ev2) => {
                     self.handle_beaver(&calculator, cir_id, ev1, ev2).await
-                },
+                }
                 HaveShares(cir_id, e_id, f_id, s1, s2, beaver_c) => {
                     self.handle_shares(&calculator, cir_id, e_id, f_id, s1, s2, beaver_c)
                 }
-                s => s
+                s => s,
             };
 
             let event = match self.party_events.recv().await {
@@ -271,7 +307,8 @@ impl Node {
                         .send(NodeCommands::OpenSelfShare(xr, c_id.clone()))
                         .expect("send should succeed");
                     // evaluate our variable as (x-r) + r_share
-                    self.evaluated.insert(c_id, calculator.add_const(r_share, xr));
+                    self.evaluated
+                        .insert(c_id, calculator.add_const(r_share, xr));
                 }
                 NodeEvents::NodeVariableReady(c_id, s) => {
                     if !self.variable_salts.contains_key(&c_id) {

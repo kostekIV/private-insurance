@@ -14,6 +14,14 @@ use std::ops::Mul;
 
 use crate::crypto::shares::{BeaverShare, Elem, Share, Shares};
 use crate::expressions::{BinaryOp, Expression};
+use crate::protocol::expression::decorate_expression;
+use crate::protocol::network::Network;
+use crate::protocol::node::Node;
+use crate::protocol::party::Party;
+use tokio::runtime::Runtime;
+use tokio::sync::mpsc::{
+    unbounded_channel, UnboundedReceiver as Receiver, UnboundedSender as Sender,
+};
 
 pub type NodeId = u64;
 pub type VarId = String;
@@ -96,4 +104,65 @@ impl Provider {
     pub fn var_to_node(&self, name: String) -> Option<NodeId> {
         self.var_to_node.get(&name).cloned()
     }
+}
+
+pub struct NodeConfig<N: Network> {
+    id: NodeId,
+    n_parties: u8,
+    network: N,
+    dealer: (Sender<DealerCommands>, Receiver<DealerEvents>),
+    expression: Expression<u64>,
+    variables: HashMap<String, NodeId>,
+    our_variables: HashMap<String, u64>,
+}
+
+pub async fn run_node<N: Network + 'static + Send>(config: NodeConfig<N>) {
+    let NodeConfig {
+        id,
+        n_parties,
+        network,
+        dealer,
+        expression,
+        variables,
+        our_variables,
+    } = config;
+
+    let (node_cmd_tx, node_cmd_rx) = unbounded_channel();
+    let (node_events_tx, node_events_rx) = unbounded_channel();
+    let (alpha_tx, alpha_rx) = unbounded_channel();
+
+    let mut provider = Provider {
+        id: 0,
+        var_to_node: variables,
+    };
+
+    let decorated = decorate_expression(expression, &mut provider).expect("");
+
+    let mut variables = HashMap::new();
+    for (cir_id, var_id) in decorated.self_var_ids(Some(id)) {
+        variables.insert(cir_id, Elem::from(*our_variables.get(&var_id).expect("")));
+    }
+
+    let mut node = Node::new(id, alpha_rx, node_cmd_tx, node_events_rx, variables);
+    let mut party = Party::new(
+        dealer,
+        alpha_tx,
+        node_cmd_rx,
+        node_events_tx,
+        network,
+        n_parties,
+    );
+
+    let node_task = async move {
+        node.run(decorated).await;
+    };
+    let party_task = async move {
+        party.run().await;
+    };
+
+    let node_handle = tokio::spawn(node_task);
+    tokio::spawn(party_task);
+
+    node_handle.await;
+    log::debug!("node {} finished", id);
 }

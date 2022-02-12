@@ -53,13 +53,13 @@ pub fn random_beaver(alpha: &Elems, n_parties: u8) -> Vec<BeaverShare> {
         .iter()
         .zip(shares_from_secret(&b, alpha, n_parties).iter())
         .zip(shares_from_secret(&c, alpha, n_parties).iter())
-        .map(|((a, b), c)| (*a, *b, *c)).collect()
+        .map(|((a, b), c)| (*a, *b, *c))
+        .collect()
 }
 
 pub fn sum_elems(elems: &Elems) -> Elem {
     elems.iter().fold(Elem::zero(), |a, &b| a + b)
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -1,13 +1,15 @@
 use crate::crypto::shares::{BeaverShare, Share, Shares};
 use crate::protocol::network::{Msg, Network};
-use crate::protocol::{Alpha, CirId, DealerCommands, DealerEvents, NodeCommands, NodeEvents, NodeId, VarId};
+use crate::protocol::{
+    Alpha, CirId, DealerCommands, DealerEvents, NodeCommands, NodeEvents, NodeId, VarId,
+};
 use std::collections::{HashMap, HashSet};
 use tokio::select;
 
 use futures::prelude::*;
 use tokio::sync::mpsc::{UnboundedReceiver as Receiver, UnboundedSender as Sender};
 
-struct Party<N: Network + Send> {
+pub struct Party<N: Network + Send> {
     dealer: (Sender<DealerCommands>, Receiver<DealerEvents>),
     alpha_channel: Sender<Alpha>,
     node_commands: Receiver<NodeCommands>,
@@ -19,6 +21,25 @@ struct Party<N: Network + Send> {
 }
 
 impl<N: Network + Send> Party<N> {
+    pub fn new(
+        dealer: (Sender<DealerCommands>, Receiver<DealerEvents>),
+        alpha_channel: Sender<Alpha>,
+        node_commands: Receiver<NodeCommands>,
+        node_events: Sender<NodeEvents>,
+        network: N,
+        n_parties: u8,
+    ) -> Self {
+        Self {
+            dealer,
+            alpha_channel,
+            node_commands,
+            node_events,
+            network,
+            n_parties,
+            opened_shares: HashMap::new(),
+            shares_per: HashMap::new(),
+        }
+    }
     /// collects share from given node for given circuit node.
     /// Checks for double sending
     /// If we have all shares returns true
@@ -42,7 +63,7 @@ impl<N: Network + Send> Party<N> {
         shares.len() == self.n_parties as usize
     }
 
-    async fn run(&mut self) {
+    pub(crate) async fn run(&mut self) {
         loop {
             select! {
                 Some((from, msg)) = self.network.receive() => {
