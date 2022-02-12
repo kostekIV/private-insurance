@@ -19,9 +19,9 @@ enum NodeState {
     Proceed,
     WaitForVariable(CirId),
     WaitForBeaver(CirId, Share, Share),
-    WaitForShares(CirId, CirId, CirId, Share, Share, Share),
+    WaitForShares(CirId, CirId, CirId, BeaverShare),
     HaveBeaver(CirId, Share, Share),
-    HaveShares(CirId, CirId, CirId, Share, Share, Share),
+    HaveShares(CirId, CirId, CirId, BeaverShare),
 }
 
 pub struct Node {
@@ -180,7 +180,7 @@ impl Node {
             .send(NodeCommands::OpenShare(f, f_id.to_string()))
             .expect("Send should succeed");
 
-        WaitForShares(cir_id, e_id, f_id, ev1, ev2, beaver.2)
+        WaitForShares(cir_id, e_id, f_id, beaver)
     }
 
     fn handle_shares(
@@ -189,9 +189,7 @@ impl Node {
         cir_id: CirId,
         e_id: CirId,
         f_id: CirId,
-        ev1: Share,
-        ev2: Share,
-        beaver_c: Share,
+        beaver: BeaverShare,
     ) -> NodeState {
         let e_shares = self.fully_open.remove(&e_id).expect("checked");
         let f_shares = self.fully_open.remove(&f_id).expect("checked");
@@ -199,7 +197,7 @@ impl Node {
         let e_elem = sum_elems(&e_shares.into_iter().map(|(e, _)| e).collect());
         let f_elem = sum_elems(&f_shares.into_iter().map(|(e, _)| e).collect());
 
-        let v = calculator.mul(ev1, ev2, e_elem, f_elem, beaver_c);
+        let v = calculator.mul(beaver, e_elem, f_elem);
         self.evaluated.insert(cir_id, v);
 
         Proceed
@@ -250,11 +248,11 @@ impl Node {
                         WaitForBeaver(cir_id, s1, s2)
                     }
                 }
-                WaitForShares(c, e, f, s1, s2, beaver_c) => {
+                WaitForShares(c, e, f, beaver) => {
                     if self.fully_open.contains_key(&e) && self.fully_open.contains_key(&f) {
-                        HaveShares(c, e, f, s1, s2, beaver_c)
+                        HaveShares(c, e, f, beaver)
                     } else {
-                        WaitForShares(c, e, f, s1, s2, beaver_c)
+                        WaitForShares(c, e, f, beaver)
                     }
                 }
                 state => state,
@@ -271,8 +269,8 @@ impl Node {
                 HaveBeaver(cir_id, ev1, ev2) => {
                     self.handle_beaver(&calculator, cir_id, ev1, ev2).await
                 }
-                HaveShares(cir_id, e_id, f_id, s1, s2, beaver_c) => {
-                    self.handle_shares(&calculator, cir_id, e_id, f_id, s1, s2, beaver_c)
+                HaveShares(cir_id, e_id, f_id, beaver) => {
+                    self.handle_shares(&calculator, cir_id, e_id, f_id, beaver)
                 }
                 s => s,
             };
