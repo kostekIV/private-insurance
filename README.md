@@ -1,7 +1,12 @@
 # Private Insurance
 
-## TODO description of project
+## Description of project
 
+Private Insurance is the project about evaluating an insurance cost (and possibly value) as multi-party computation, where no one learns inputs of others. It is possible since both cost and value of insurance can be described as a function of private inputs of every party. We used `SPDZ` protocol with trusted dealer. In place of double-sharing we used hashing.
+
+Project front-end was created in `Typescript` with `React` framework.
+Project back-end was created in `Rust`.
+Communication between uses `Tide` framework.
 ## How to run protocol
 Server receiving requests from UI can be run by
 ```
