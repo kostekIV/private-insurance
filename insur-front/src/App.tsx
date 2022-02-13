@@ -1,38 +1,179 @@
-import React from "react";
+import React, { useReducer } from "react";
 import "./App.css";
 import { useLazyExprQuery } from "./store/api/expression.service";
-import { Expression } from "./model/expressions";
+
+const formReducer = (state: any, event: any) => {
+  return {
+    ...state,
+    [event.name]: event.value,
+  };
+};
 
 function App() {
-  const hardcodedExpr: Expression = {
-    binOp: {
-      left: {
-        number: {
-          number: 10,
-        },
-      },
-      right: {
-        variable: {
-          name: "x",
-        },
-      },
-      op: "Add",
-    },
-  };
+  const [formData, setFormData] = useReducer(formReducer, {
+    amount_of_people: 0,
+    expression: "Number",
+  });
   const [trigger, { isLoading, data, error }] = useLazyExprQuery();
 
   const onClick = () => {
-    trigger(hardcodedExpr);
+    trigger(formData);
   };
 
   error && console.log(error);
 
+  const handleSubmit = (event: any) => {
+    event.preventDefault();
+    onClick();
+  };
+
+  const handleChange = (event: any) => {
+    setFormData({
+      name: event.target.name,
+      value: event.target.value,
+    });
+  };
+
+  const getValue = (name: string) => {
+    let result = Object.entries(formData).filter(
+      ([key, _]) => {
+        if (key == name) {
+          return true;
+        } else {
+          return false;
+        }
+      }
+    );
+    if (result.length === 0) {
+      return;
+    } else {
+      return result[0][1] as string;
+    }
+  }
+
+  const renderExpression = (type: string, name: string) => {
+    switch (type) {
+      case "Number":
+        let num_name = name+"/number";
+        return (
+          <input name={num_name}
+            step="1"
+            type="number"
+            onChange={handleChange}
+            value={getValue(num_name) || '0'}
+          />
+        );
+      case "Variable":
+        let var_name = name+"/variable";
+        return (
+          <span>
+          <input name={var_name+"/var"}
+            onChange={handleChange}
+            value={getValue(var_name+"/var")}
+          /> <span> owned by </span> 
+           <input name={var_name+"/owner"}
+            step="1"
+            type="number"
+            min={0}
+            max={formData.amount_of_people - 1}
+            onChange={handleChange}
+            value={getValue(var_name+"/owner") || '0'}
+          />
+          </span>
+        );
+      case "Expression":
+        let left_name = name+"/left";
+        let right_name = name+"/right";
+        let op_name = name+"/op";
+
+        return (
+          <div>
+            <select
+              name={left_name}
+              onChange={handleChange}
+              value={getValue(left_name) || 'Number'}
+            >
+              <option value="Number">Number</option>
+              <option value="Variable">Variable</option>
+              <option value="Expression">Expression</option>
+            </select>
+            {renderExpression(getValue(left_name) || "Number", name+"/left")}
+            <br></br>
+            <select
+              name={op_name}
+              onChange={handleChange}
+              value={getValue(op_name) || 'Sum'}
+            >
+              <option value="Sum">Sum</option>
+              <option value="Mul">Mul</option>
+            </select>
+            <br></br>
+            <select
+              name={right_name}
+              onChange={handleChange}
+              value={getValue(right_name) || 'Number'}
+            >
+              <option value="Number">Number</option>
+              <option value="Variable">Variable</option>
+              <option value="Expression">Expression</option>
+            </select>
+            {renderExpression(getValue(right_name) || "Number", name+"/right")}
+          </div>
+        );
+    }
+  };
+
   return (
-    <div>
-      {isLoading && <p>Loading</p>}
-      {data && <p>Got response {data.msg}</p>}
-      {error && <p>Error!</p>}
-      <button onClick={onClick}>CLICK ME TO SUBMIT</button>
+    <div className="wrapper">
+      <h1>Private Insurence</h1>
+      <form onSubmit={handleSubmit}>
+        <fieldset>
+          <label>
+            <p>Amount of people</p>
+            <input
+              step="1"
+              type="number"
+              name="amount_of_people"
+              min={0}
+              onChange={handleChange}
+              value={formData.amount_of_people || "0"}
+            />
+          </label>
+        </fieldset>
+        <fieldset>
+          <label>
+            <p>Expression</p>
+            <select
+              name="expression"
+              onChange={handleChange}
+              value={formData.expression || "Number"}
+            >
+              <option value="Number">Number</option>
+              <option value="Variable">Variable</option>
+              <option value="Expression">Expression</option>
+            </select>
+            {renderExpression(formData.expression, "expression")}
+          </label>
+        </fieldset>
+        <button type="submit"> Submit </button>
+      </form>
+      <div>
+        You are submitting the following:
+        <ul>
+          {Object.entries(formData).map(
+            ([name, value]) =>
+              (name !== "expression") &&
+              <li key={name}>
+                  <strong>{name}</strong>: {value}
+                </li>
+          )}
+        </ul>
+      </div>
+      <div>
+        {isLoading && <p>Loading</p>}
+        {data && <p>Got response {data.msg}</p>}
+        {error && <p>Error!</p>}
+      </div>
     </div>
   );
 }
