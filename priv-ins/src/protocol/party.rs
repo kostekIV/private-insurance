@@ -70,20 +70,17 @@ impl<N: Network + Send> Party<N> {
         loop {
             select! {
                 Some((from, msg)) = self.network.receive() => {
+                    if self.id == 0 {
+                        println!("NetworkMsg from {:?} {:?}", from, msg);
+                    }
                     match msg {
                         Msg::OpenShare(cid, share) => {
-                            if self.id == 0 {
-                                println!("Msg::OpenShare {:?}", cid);
-                            }
                             if self.collect_share(from, share, cid.clone()) {
                                 let collected_shares = self.shares_per.remove(&cid).expect("We have collected it");
                                 self.node_events.send(NodeEvents::CirReady(cid, collected_shares)).expect("Send should succeed");
                             }
                         }
                         Msg::OpenVariable(cid, elem) => {
-                            if self.id == 0 {
-                                println!("Msg::OpenVariable {:?}", cid);
-                            }
                             self.node_events.send(NodeEvents::NodeVariableReady(cid, elem)).expect("Send should succeed");
                         }
                     }
@@ -96,40 +93,28 @@ impl<N: Network + Send> Party<N> {
                         },
                         Some(cmd) => cmd,
                     };
+                    if self.id == 0 {
+                        println!("NodeCmd {:?}", cmd);
+                    }
 
                     match cmd {
                         NodeCommands::OpenShare(share, cir_id) => {
-                            if self.id == 0 {
-                                println!("NodeCommands::OpenShare {:?}", cir_id);
-                            }
                             self.network.broadcast(Msg::OpenShare(cir_id, share));
                         },
                         NodeCommands::OpenSelfInput(v_id) => {
-                            if self.id == 0 {
-                                println!("NodeCommands::OpenSelfInput {:?}", v_id);
-                            }
                             self.dealer.0.send((self.id,
                                 DealerCommands::NodeOpenSelfInput(v_id)
                             )).expect("Send should succeed");
                         },
                         NodeCommands::NeedBeaver(cir_id) => {
-                            if self.id == 0 {
-                                println!("NodeCommands::NeedBeaver {:?}", cir_id);
-                            }
                             self.dealer.0.send((self.id,
                                 DealerCommands::BeaverFor(cir_id))
                             ).expect("Send should succeed");
                         }
                         NodeCommands::OpenSelfShare(s, cir_id) => {
-                            if self.id == 0 {
-                                println!("NodeCommands::OpenSelfShare {:?}", cir_id);
-                            }
                             self.network.broadcast(Msg::OpenVariable(cir_id, s))
                         },
                         NodeCommands::NeedAlpha => {
-                            if self.id == 0 {
-                                println!("NodeCommands::NeedAlpha");
-                            }
                             self.dealer.0.send((self.id,
                                 DealerCommands::NeedAlpha)
                             ).expect("Send should succeed");
@@ -145,35 +130,27 @@ impl<N: Network + Send> Party<N> {
                         }
                     };
 
+                    if self.id == 0 {
+                        println!("DealerEvent::{:?}", dealer_event);
+                    }
+
                     match dealer_event {
                         DealerEvents::NodeSelfVariable(var_id, r, r_share) => {
-                            if self.id == 0 {
-                                println!("DealerEvents::NodeSelfVariable {:?}", var_id);
-                            }
                             self.node_events.send(
                                 NodeEvents::SelfVariableReady(var_id, r, r_share)
                             ).expect("Send should succeed");
                         }
                         DealerEvents::NodeVariableShared(var_id, r_share) => {
-                            if self.id == 0 {
-                                println!("DealerEvents::NodeVariableShared {:?}", var_id);
-                            }
                             self.node_events.send(
                                 NodeEvents::NodeVariableShareReady(var_id, r_share)
                             ).expect("Send should succeed");
                         }
                         DealerEvents::BeaverSharesFor(cir_id, beaver_shares) => {
-                            if self.id == 0 {
-                                println!("DealerEvents::BeaverSharesFor {:?}", cir_id);
-                            }
                             self.node_events.send(
                                 NodeEvents::BeaverFor(cir_id, beaver_shares)
                             ).expect("Send should succeed");
                         }
                         DealerEvents::Alpha(alpha) => {
-                            if self.id == 0 {
-                                println!("DealerEvents::Alpha");
-                            }
                             self.alpha_channel.send(Alpha(alpha));
                         }
                     }

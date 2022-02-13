@@ -61,13 +61,7 @@ impl TrustedDealer {
                     }
                 }
                 Some((node_id, DealerCommands::NodeOpenSelfInput(cir_id))) => {
-                    if cir_id == "2" {
-                        println!("before");
-                    }
                     if self.variables_owned.insert(cir_id.clone()) {
-                        if cir_id == "2" {
-                            println!("in if");
-                        }
                         let r = Elem::random(rand::thread_rng());
                         let shares = shares::shares_from_secret(&r, &self.alpha.1, self.n_parties);
                         for (i, share) in shares.iter().enumerate() {

@@ -25,6 +25,7 @@ pub enum DecoratedExpression {
 }
 
 /// Expression repr after processing, all non const expressions are removed and substituted for ids
+#[derive(Debug)]
 pub enum MidEvalExpression {
     AddConstant(Elem, CirId, CirId),
     Add(CirId, CirId, CirId),

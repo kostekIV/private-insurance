@@ -18,26 +18,31 @@ use tokio::sync::mpsc::{
     unbounded_channel, UnboundedReceiver as Receiver, UnboundedSender as Sender,
 };
 
+#[derive(Debug)]
+/// Internal state of node with following transitions:
+/// Proceed -> WaitForVariable
+/// WaitForVariable -> Proceed
+/// Proceed -> WaitForBeaver
+/// WaitForBeaver -> HaveBeaver
+/// HaveBeaver -> WaitForShares
+/// WaitForShares -> HaveShares
+/// HaveShares -> Proceed
+///
+/// In particular following path represents multiplication phases.
+/// WaitForBeaver -> HaveBeaver -> WaitForShares -> HaveShares
 enum NodeState {
+    /// we can procceed with evaluating
     Proceed,
+    /// waiting for shares of variable in the cir_id
     WaitForVariable(CirId),
+    /// waiting for beaver shares in mul cir_id node
     WaitForBeaver(CirId, Share, Share),
+    /// waiting for shares of (x - e) and (y - f) used in mul
     WaitForShares(CirId, CirId, CirId, BeaverShare),
+    /// got beaver shares for mul cir_id node
     HaveBeaver(CirId, Share, Share),
+    /// have all shares of (x - e) and (y - f) used in mul
     HaveShares(CirId, CirId, CirId, BeaverShare),
-}
-
-impl Debug for NodeState {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Proceed => f.write_str("Proceed"),
-            WaitForVariable(var) => f.write_str(format!("WaitForVariable(var: {})", var).as_str()),
-            WaitForBeaver(_, _, _) => f.write_str("WaitForBeaver"),
-            WaitForShares(_, _, _, _) => f.write_str("WaitForShares"),
-            HaveBeaver(_, _, _) => f.write_str("HaveBeaver"),
-            HaveShares(_, _, _, _) => f.write_str("HaveShares"),
-        }
-    }
 }
 
 pub struct Node {
@@ -129,14 +134,12 @@ impl Node {
         calculator: &Calculator,
         evaluating: &MidEvalExpression,
     ) -> NodeState {
+        if self.id == 0 {
+            println!("Evaluating MidEvalExpression::{:?}", evaluating);
+        }
+
         match evaluating {
             MidEvalExpression::AddConstant(s, evaluated_node, cir_id) => {
-                if self.id == 0 {
-                    println!(
-                        "MidEvalExpression::AddConstant {:?} {:?}",
-                        evaluated_node, cir_id
-                    );
-                }
                 let evaluated = self
                     .evaluated
                     .remove(evaluated_node)
@@ -147,9 +150,6 @@ impl Node {
                 self.evaluated.insert(cir_id.to_string(), v);
             }
             MidEvalExpression::Add(e1, e2, cir_id) => {
-                if self.id == 0 {
-                    println!("MidEvalExpression::Add {:?}", cir_id);
-                }
                 let ev1 = self
                     .evaluated
                     .remove(e1)
@@ -164,9 +164,6 @@ impl Node {
                 self.evaluated.insert(cir_id.to_string(), v);
             }
             MidEvalExpression::MulConstant(s, evaluated_node, cir_id) => {
-                if self.id == 0 {
-                    println!("MidEvalExpression::MulConstant {:?}", cir_id);
-                }
                 let evaluated = self
                     .evaluated
                     .remove(evaluated_node)
@@ -175,14 +172,8 @@ impl Node {
                 let v = calculator.mul_by_const(evaluated, Elem::from(s.clone()));
 
                 self.evaluated.insert(cir_id.to_string(), v);
-                if self.id == 0 {
-                    println!("MidEvalExpression::MulConstant {:?}", cir_id);
-                }
             }
             MidEvalExpression::Mul(e1, e2, cir_id) => {
-                if self.id == 0 {
-                    println!("MidEvalExpression::Mul {:?}", cir_id);
-                }
                 let ev1 = self
                     .evaluated
                     .remove(e1)
@@ -195,9 +186,6 @@ impl Node {
                 return WaitForBeaver(cir_id.to_string(), ev1, ev2);
             }
             MidEvalExpression::Var(cir_id) => {
-                if self.id == 0 {
-                    println!("MidEvalExpression::Var {:?}", cir_id);
-                }
                 if !self.evaluated.contains_key(cir_id) {
                     return WaitForVariable(cir_id.to_string());
                 }
@@ -313,7 +301,7 @@ impl Node {
             };
 
             if self.id == 0 {
-                println!("2) NodeState: {:?}", state);
+                println!("NodeState: {:?}", state);
             }
 
             if self.can_proceed(&state) {
@@ -347,11 +335,12 @@ impl Node {
                 }
             };
 
+            if self.id == 0 {
+                println!("NodeEvents::{:?}", event);
+            }
+
             match event {
                 NodeEvents::CirReady(c_id, s) => {
-                    if self.id == 0 {
-                        println!(" NodeEvents::CirReady {:?}", c_id);
-                    }
                     // evaluate node as sum of gotten shares
                     if self.fully_open.contains_key(&c_id) {
                         log::debug!("got twice opened value for {}", c_id);
@@ -360,9 +349,6 @@ impl Node {
                     self.fully_open.insert(c_id, s);
                 }
                 NodeEvents::SelfVariableReady(c_id, r, r_share) => {
-                    if self.id == 0 {
-                        println!(" NodeEvents::SelfVariableReady {:?}", c_id);
-                    }
                     if !self.variables.contains_key(&c_id) {
                         log::debug!("got foreign variable");
                         continue;
@@ -379,9 +365,6 @@ impl Node {
                         .insert(c_id, calculator.add_const(r_share, xr));
                 }
                 NodeEvents::NodeVariableReady(c_id, s) => {
-                    if self.id == 0 {
-                        println!(" NodeEvents::NodeVariableReady {:?}", c_id);
-                    }
                     if self.variable_salts.contains_key(&c_id) {
                         log::debug!("got twice value for {}", c_id);
                         continue;
@@ -391,9 +374,6 @@ impl Node {
                     self.combine_variable_if_full(c_id, &calculator);
                 }
                 NodeEvents::BeaverFor(c_id, beaver) => {
-                    if self.id == 0 {
-                        println!(" NodeEvents::BeaverFor {:?}", c_id);
-                    }
                     if !self.beavers.contains_key(&c_id) {
                         log::debug!("got twice value for {}", c_id);
                     }
@@ -401,9 +381,6 @@ impl Node {
                     self.beavers.insert(c_id, beaver);
                 }
                 NodeEvents::NodeVariableShareReady(c_id, s) => {
-                    if self.id == 0 {
-                        println!(" NodeEvents::NodeVariableShareReady {:?}", c_id);
-                    }
                     if self.variable_shares.contains_key(&c_id) {
                         log::debug!("got twice value for {}", c_id);
                         continue;
@@ -414,6 +391,8 @@ impl Node {
                 }
             }
         }
+
+        // we have final share lets open it now
 
         let last_node_id = circuit_nodes
             .last()
