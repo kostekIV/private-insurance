@@ -55,28 +55,28 @@ function App() {
             step="1"
             type="number"
             onChange={handleChange}
-            value={getValue(num_name) || "0"}
+            value={getValue(num_name)}
+            placeholder="Enter number"
           />
         );
       case "Variable":
         let var_name = name + "/variable";
         return (
           <span>
-            <input
-              name={var_name + "/var"}
-              onChange={handleChange}
-              value={getValue(var_name + "/var")}
-            />{" "}
-            <span> owned by </span>
-            <input
-              name={var_name + "/owner"}
-              step="1"
-              type="number"
-              min={0}
-              max={formData.amount_of_people - 1}
-              onChange={handleChange}
-              value={getValue(var_name + "/owner") || "0"}
-            />
+          <input name={var_name+"/var"}
+            onChange={handleChange}
+            value={getValue(var_name+"/var")}
+            placeholder="Enter variable name"
+          /> <span> owned by </span> 
+           <input name={var_name+"/owner"}
+            step="1"
+            type="number"
+            min={0}
+            max={formData.amount_of_people - 1}
+            onChange={handleChange}
+            value={getValue(var_name+"/owner")}
+            placeholder="Enter owner"
+          />
           </span>
         );
       case "Expression":
@@ -89,38 +89,42 @@ function App() {
             <select
               name={left_name}
               onChange={handleChange}
-              value={getValue(left_name) || "Number"}
+              value={getValue(left_name)}
             >
+              <option value="Unknown">--Choose Type--</option>
               <option value="Number">Number</option>
               <option value="Variable">Variable</option>
               <option value="Expression">Expression</option>
             </select>
-            {renderExpression(getValue(left_name) || "Number", name + "/left")}
+            {renderExpression(getValue(left_name) || "Unknown", name+"/left")}
             <br></br>
             <select
               name={op_name}
               onChange={handleChange}
-              value={getValue(op_name) || "Sum"}
+              value={getValue(op_name)}
             >
+              <option value="Unknown">--Choose Operator--</option>
               <option value="Sum">Sum</option>
               <option value="Mul">Mul</option>
+              <option value="Div">Div</option>
+              <option value="Sub">Sub</option>
             </select>
             <br></br>
             <select
               name={right_name}
               onChange={handleChange}
-              value={getValue(right_name) || "Number"}
+              value={getValue(right_name)}
             >
+              <option value="Unknown">--Choose Type--</option>
               <option value="Number">Number</option>
               <option value="Variable">Variable</option>
               <option value="Expression">Expression</option>
             </select>
-            {renderExpression(
-              getValue(right_name) || "Number",
-              name + "/right"
-            )}
+            {renderExpression(getValue(right_name) || "Unknown", name+"/right")}
           </div>
         );
+      case "Unknown":
+        return;
     }
   };
 
