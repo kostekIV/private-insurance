@@ -43,6 +43,15 @@
 
 .wrapper fieldset {
   margin: 20px 0;
+  border-block-color: black;
+  border-block-width: thick;
+  border-block-style: solid;
+  border-left-width: thick;
+  border-left-color: black;
+  border-left-style: solid;
+  border-right-width: thick;
+  border-right-color: black;
+  border-right-style: solid;
 }
 .wrapper div {
   margin-left: 1%;

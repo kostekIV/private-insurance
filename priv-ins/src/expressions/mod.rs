@@ -24,7 +24,7 @@ pub enum Expression<T: Num> {
         op: BinaryOp,
     },
     Variable {
-        name: String,
+        name: String
     },
 }
 
@@ -33,25 +33,29 @@ pub fn eval_expression<T: Num + Copy>(
     var_mapping: &HashMap<String, T>,
 ) -> Result<T, String> {
     match exp {
-        Expression::Number { number } => Ok(*number),
-        Expression::BinOp { left, right, op } => Ok(match op {
-            BinaryOp::Add => {
-                eval_expression(left, var_mapping)? + eval_expression(right, var_mapping)?
-            }
-            BinaryOp::Sub => {
-                eval_expression(left, var_mapping)? - eval_expression(right, var_mapping)?
-            }
-            BinaryOp::Mul => {
-                eval_expression(left, var_mapping)? * eval_expression(right, var_mapping)?
-            }
-            BinaryOp::Div => {
-                eval_expression(left, var_mapping)? / eval_expression(right, var_mapping)?
-            }
-        }),
-        Expression::Variable { name } => var_mapping
-            .get(name)
-            .ok_or(format!("Variable `{}` not found", name))
-            .map(|&x| x),
+        Expression::Number { number } => { Ok(*number) }
+        Expression::BinOp { left, right, op } => {
+            Ok(match op {
+                BinaryOp::Add => {
+                    eval_expression(left, var_mapping)? + eval_expression(right, var_mapping)?
+                }
+                BinaryOp::Sub => {
+                    eval_expression(left, var_mapping)? - eval_expression(right, var_mapping)?
+                }
+                BinaryOp::Mul => {
+                    eval_expression(left, var_mapping)? * eval_expression(right, var_mapping)?
+                }
+                BinaryOp::Div => {
+                    eval_expression(left, var_mapping)? / eval_expression(right, var_mapping)?
+                }
+            })
+        }
+        Expression::Variable { name } => {
+            var_mapping
+                .get(name)
+                .ok_or(format!("Variable `{}` not found", name))
+                .map(|&x| x)
+        }
     }
 }
 
@@ -59,7 +63,6 @@ pub fn eval_expression<T: Num + Copy>(
 mod tests {
     use crate::expressions::BinaryOp::Add;
     use crate::expressions::{eval_expression, Expression};
-    use std::collections::HashMap;
 
     #[test]
     fn it_works() {

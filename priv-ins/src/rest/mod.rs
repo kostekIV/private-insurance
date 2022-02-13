@@ -13,6 +13,8 @@ use tokio::sync::mpsc::unbounded_channel;
 
 use num_traits::Float;
 
+use num_traits::Float;
+
 #[derive(Deserialize, Serialize, Debug)]
 pub struct SuccessMsg {
     msg: String,
