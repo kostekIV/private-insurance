@@ -10,7 +10,6 @@ pub type Elems = Vec<Elem>;
 pub type Share = (Elem, Elem);
 pub type Shares = Vec<Share>;
 pub type BeaverShare = (Share, Share, Share);
-pub type Beaver = (Elems, Elems, Elems);
 
 pub type Hash = [u8; 32];
 pub type Salt = Vec<u8>;
@@ -90,6 +89,7 @@ pub fn hash(x: &[u8]) -> Hash {
 mod tests {
     use super::*;
 
+    #[test]
     fn generate_elems_correctly() {
         let n_parties = 100;
         let alpha = elems_from_secret(&Elem::from(420), n_parties);

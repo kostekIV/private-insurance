@@ -150,7 +150,7 @@ impl DecoratedExpression {
                 vec![MidEvalExpression::Var(cir_id)]
             }
             DecoratedExpression::Constant(_, _) => {
-                /// In the decorated expression all constants are only temporary
+                // In the decorated expression all constants are only temporary
                 vec![]
             }
         }
