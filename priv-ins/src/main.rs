@@ -28,6 +28,7 @@ fn get_cors() -> CorsMiddleware {
         .allow_credentials(false)
 }
 
+<<<<<<< HEAD
 #[tokio::main]
 async fn main() {
     run_nodes().await;

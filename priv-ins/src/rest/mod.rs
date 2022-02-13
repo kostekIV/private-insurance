@@ -11,7 +11,7 @@ pub struct SuccessMsg {
 }
 
 pub(crate) async fn expression(mut req: Request<()>) -> tide::Result<Body> {
-    let exp: Expression<f64> = req.body_json().await?;
+    let form_data = req.body_string().await?;
 
     log!(Level::Debug, "got {:?}", exp);
     log!(Level::Debug, "{:?}", eval_expression(&exp, &HashMap::new()));

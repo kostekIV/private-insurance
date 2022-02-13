@@ -2,6 +2,7 @@ use num_traits::Num;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+
 type BExpression<T> = Box<Expression<T>>;
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -57,6 +58,7 @@ pub fn eval_expression<T: Num + Copy>(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use crate::expressions::BinaryOp::Add;
     use crate::expressions::{eval_expression, Expression};
     use std::collections::HashMap;
@@ -86,6 +88,5 @@ mod tests {
         assert_eq!(
             Err("Variable `x` not found".to_string()),
             eval_expression(&x, &HashMap::from([]))
-        );
     }
 }
