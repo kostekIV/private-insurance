@@ -55,12 +55,8 @@ where
     } else {
         let op = if map[&(key.clone() + "/op")] == "Sum" {
             BinaryOp::Add
-        } else if map[&(key.clone() + "/op")] == "Mul" {
-            BinaryOp::Mul
-        } else if map[&(key.clone() + "/op")] == "Div" {
-            BinaryOp::Div
         } else {
-            BinaryOp::Sub
+            BinaryOp::Mul
         };
 
         return Expression::BinOp {
