@@ -163,19 +163,6 @@ function App() {
         <button type="submit"> Submit </button>
       </form>
       <div>
-        You are submitting the following:
-        <ul>
-          {Object.entries(formData).map(
-            ([name, value]) =>
-              name !== "expression" && (
-                <li key={name}>
-                  <strong>{name}</strong>: {value}
-                </li>
-              )
-          )}
-        </ul>
-      </div>
-      <div>
         {isLoading && <p>Loading</p>}
         {data && <p>Got response {data.msg}</p>}
         {error && <p>Error!</p>}
