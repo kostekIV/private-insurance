@@ -667,7 +667,8 @@ impl Node {
         self.check_proofs();
 
         // wait for all nodes to conclude their checks
-        self.wait_for_others([last_id.clone()].into_iter().collect(), &calculator).await;
+        self.wait_for_others([last_id.clone()].into_iter().collect(), &calculator)
+            .await;
 
         // yay
         if self.id == 0 {

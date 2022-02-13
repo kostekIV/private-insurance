@@ -34,24 +34,21 @@ pub(crate) fn translate_string_to_map(input: String) -> HashMap<String, String> 
     return result;
 }
 
-pub(crate) fn get_expression<T>(
-    map: HashMap<String, String>,
-    key: String,
-) -> Expression<T>
+pub(crate) fn get_expression<T>(map: HashMap<String, String>, key: String) -> Expression<T>
 where
     T: Num + std::str::FromStr,
     T::Err: std::fmt::Debug,
 {
     log!(Level::Debug, "Key {:?}", key);
 
-    if map[&key] == "Number" {
-        return Expression::Number {
+    return if map[&key] == "Number" {
+        Expression::Number {
             number: map[&(key + "/number")].parse::<T>().unwrap(),
-        };
+        }
     } else if map[&key] == "Variable" {
         let name = map[&(key.clone() + "/variable/var")].clone();
 
-        return Expression::Variable { name: name };
+        Expression::Variable { name }
     } else {
         let op = if map[&(key.clone() + "/op")] == "Sum" {
             BinaryOp::Add
@@ -59,12 +56,12 @@ where
             BinaryOp::Mul
         };
 
-        return Expression::BinOp {
+        Expression::BinOp {
             left: Box::new(get_expression(map.clone(), key.clone() + "/left")),
             right: Box::new(get_expression(map, key + "/right")),
-            op: op,
-        };
-    }
+            op,
+        }
+    };
 }
 
 pub(crate) async fn expression(mut req: Request<()>) -> tide::Result<Body> {

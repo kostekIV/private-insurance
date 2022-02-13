@@ -62,9 +62,10 @@ function App() {
       case "Variable":
         let var_name = name + "/variable";
         return (
-          <input name={var_name+"/var"}
+          <input
+            name={var_name + "/var"}
             onChange={handleChange}
-            value={getValue(var_name+"/var")}
+            value={getValue(var_name + "/var")}
             placeholder="Enter variable name"
           />
         );
@@ -85,7 +86,7 @@ function App() {
               <option value="Variable">Variable</option>
               <option value="Expression">Expression</option>
             </select>
-            {renderExpression(getValue(left_name) || "Unknown", name+"/left")}
+            {renderExpression(getValue(left_name) || "Unknown", name + "/left")}
             <br></br>
             <select
               name={op_name}
@@ -107,7 +108,10 @@ function App() {
               <option value="Variable">Variable</option>
               <option value="Expression">Expression</option>
             </select>
-            {renderExpression(getValue(right_name) || "Unknown", name+"/right")}
+            {renderExpression(
+              getValue(right_name) || "Unknown",
+              name + "/right"
+            )}
           </div>
         );
       case "Unknown":
