@@ -9,7 +9,51 @@ pub struct SuccessMsg {
 }
 
 #[tokio::test]
-async fn test() {
+async fn test_expression_small() {
+    let expression = Expression::<u64>::BinOp {
+        left: Box::new(Expression::Variable {
+            name: "0".to_string(),
+        }),
+        right: Box::new(Expression::Variable {
+            name: "1".to_string(),
+        }),
+        op: Mul,
+    };
+    let variables = (0..2)
+        .map(|i| [(i.to_string(), i + 5)].iter().cloned().collect())
+        .collect();
+    let expected_result = 5 * 6;
+    let results = run_nodes(2, variables, expression).await;
+    assert_eq!(
+        results.into_iter().map(|r| r.unwrap()).collect::<Vec<_>>(),
+        (0..2).map(|_| expected_result).collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn test_more_parties_then_variables() {
+    let expression = Expression::<u64>::BinOp {
+        left: Box::new(Expression::Variable {
+            name: "0".to_string(),
+        }),
+        right: Box::new(Expression::Variable {
+            name: "1".to_string(),
+        }),
+        op: Mul,
+    };
+    let variables = (0..4)
+        .map(|i| [(i.to_string(), i + 5)].iter().cloned().collect())
+        .collect();
+    let expected_result = 5 * 6;
+    let results = run_nodes(4, variables, expression).await;
+    assert_eq!(
+        results.into_iter().map(|r| r.unwrap()).collect::<Vec<_>>(),
+        (0..4).map(|_| expected_result).collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn test_expression_big() {
     let expression = Expression::<u64>::BinOp {
         left: Box::new(Expression::<u64>::BinOp {
             left: Box::new(Expression::<u64>::BinOp {
