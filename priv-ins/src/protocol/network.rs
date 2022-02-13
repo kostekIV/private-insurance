@@ -9,6 +9,8 @@ pub enum Msg {
     OpenVariable(CirId, Elem),
     Commit(CirId, Commitment),
     Proof(CirId, CommitmentProof),
+    ProofInvalid(CirId),
+    ProofValid(CirId),
 }
 
 pub type NetworkMessage = (NodeId, Msg);

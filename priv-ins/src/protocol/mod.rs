@@ -66,6 +66,10 @@ pub enum NodeCommands {
     CommitmentFor(CirId, Commitment),
     /// Broadcast proof for cir_id
     ProofFor(CirId, CommitmentProof),
+    /// Broadcast that proof was verified for cir_id
+    ProofVerified(CirId),
+    /// broadcast that proof was invalid
+    ProofInvalid(CirId),
 }
 
 #[derive(Debug)]
@@ -84,6 +88,10 @@ pub enum NodeEvents {
     CommitmentsFor(CirId, Vec<(NodeId, Commitment)>),
     /// got all proofs for cir_id
     ProofsFor(CirId, Vec<(NodeId, CommitmentProof)>),
+    /// proof was verified for cir_id
+    ProofValid(CirId),
+    /// broadcast that proof was invalid
+    ProofInvalid(CirId),
 }
 
 #[derive(Debug)]

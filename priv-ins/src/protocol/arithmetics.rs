@@ -25,7 +25,7 @@ impl Calculator {
         (share_1.0 + share_2.0, share_1.1 + share_2.1)
     }
 
-    /// Returns a substraction of two shares [x-y]
+    /// Returns a subtraction of two shares [x-y]
     pub fn sub(&self, share_1: Share, share_2: Share) -> Share {
         (share_1.0 - share_2.0, share_1.1 - share_2.1)
     }
@@ -78,7 +78,7 @@ impl Calculator {
     }
 }
 
-fn verify_commitments(commitments: &Vec<CommitmentProof>) -> bool {
+pub fn verify_commitments(commitments: &Vec<CommitmentProof>) -> bool {
     for (hash, elem, salt) in commitments.iter() {
         if *hash != shares::compute_commitment(elem, salt) {
             return false;

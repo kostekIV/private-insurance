@@ -2,8 +2,10 @@ use crate::crypto::shares::{
     sum_elems, BeaverShare, Commitment, CommitmentProof, Elem, Share, Shares,
 };
 use crate::ff::PrimeField;
+use std::collections::HashSet;
 use std::{collections::HashMap, fmt::Debug, ops::Sub};
 
+use crate::protocol::arithmetics::verify_commitments;
 use crate::protocol::{
     arithmetics::Calculator,
     expression::{DecoratedExpression, MidEvalExpression},
@@ -58,6 +60,9 @@ pub struct Node {
     my_proofs: HashMap<CirId, CommitmentProof>,
     proofs: HashMap<CirId, Vec<(NodeId, CommitmentProof)>>,
     commitments: HashMap<CirId, Vec<(NodeId, Commitment)>>,
+    valid_proofs: HashSet<CirId>,
+    invalid_proofs: HashSet<CirId>,
+    original_shares: HashMap<CirId, Share>,
 }
 
 impl Node {
@@ -82,6 +87,9 @@ impl Node {
             my_proofs: HashMap::new(),
             commitments: HashMap::new(),
             proofs: HashMap::new(),
+            valid_proofs: HashSet::new(),
+            invalid_proofs: HashSet::new(),
+            original_shares: HashMap::new(),
         }
     }
     /// checks if we have both x - r and [r] for variable under `var_node` if so put x - r + [r] under
@@ -262,6 +270,12 @@ impl Node {
 
                 self.proofs.insert(cir_id, proofs);
             }
+            NodeEvents::ProofValid(cir_id) => {
+                self.valid_proofs.insert(cir_id);
+            }
+            NodeEvents::ProofInvalid(cir_id) => {
+                self.invalid_proofs.insert(cir_id);
+            }
         }
     }
 
@@ -283,6 +297,9 @@ impl Node {
 
         let e_id = sub_id(&cir_id, &"e".to_string());
         let f_id = sub_id(&cir_id, &"f".to_string());
+
+        self.original_shares.insert(e_id.clone(), e.clone());
+        self.original_shares.insert(f_id.clone(), f.clone());
 
         self.party_commands
             .send(NodeCommands::OpenShare(e, e_id.to_string()))
@@ -310,11 +327,20 @@ impl Node {
         let e_elem = sum_elems(&e_shares.into_iter().map(|(e, _)| e).collect());
         let f_elem = sum_elems(&f_shares.into_iter().map(|(e, _)| e).collect());
 
-        let (e_hash, e_salt) = Calculator::generate_commitment(&e_elem);
-        let (f_hash, f_salt) = Calculator::generate_commitment(&f_elem);
+        let e_x = calculator.generate_commitment_share(
+            e_elem.clone(),
+            self.original_shares.remove(&e_id).expect("checked"),
+        );
+        let f_x = calculator.generate_commitment_share(
+            f_elem.clone(),
+            self.original_shares.remove(&f_id).expect("checked"),
+        );
 
-        let e_proof = (e_hash, e_elem.clone(), e_salt);
-        let f_proof = (f_hash, f_elem.clone(), f_salt);
+        let (e_hash, e_salt) = Calculator::generate_commitment(&e_x);
+        let (f_hash, f_salt) = Calculator::generate_commitment(&f_x);
+
+        let e_proof = (e_hash, e_x.clone(), e_salt);
+        let f_proof = (f_hash, f_x.clone(), f_salt);
 
         self.my_proofs.insert(e_id.clone(), e_proof);
         self.my_proofs.insert(f_id.clone(), f_proof);
@@ -332,6 +358,7 @@ impl Node {
         WaitForCommitments(e_id, f_id)
     }
 
+    /// check state of node and make transition if needed
     fn state_transition(&self, state: NodeState) -> NodeState {
         match state {
             WaitForVariable(cir_id) => {
@@ -366,6 +393,89 @@ impl Node {
         }
     }
 
+    async fn wait_for_proofs(&mut self, calculator: &Calculator) {
+        let mut need_proofs_for = self.my_proofs.keys().cloned().collect::<HashSet<_>>();
+
+        for cir_id in self.proofs.keys() {
+            need_proofs_for.remove(cir_id);
+        }
+
+        while !need_proofs_for.is_empty() {
+            let event = match self.party_events.recv().await {
+                Some(e) => e,
+                None => {
+                    log::debug!("party channel closed");
+                    return;
+                }
+            };
+            self.handle_event(event, &calculator);
+
+            for cir_id in self.proofs.keys() {
+                need_proofs_for.remove(cir_id);
+            }
+        }
+    }
+
+    fn check_proofs(&mut self) -> HashSet<CirId> {
+        let cir_ids = self.proofs.keys().cloned().collect::<Vec<_>>();
+        for cir_id in cir_ids.iter() {
+            let mut proofs = self.proofs.remove(cir_id).expect("checked");
+
+            let mut commits = self.commitments.remove(cir_id).expect("checked");
+
+            proofs.sort_by(|a, b| a.0.cmp(&b.0));
+            commits.sort_by(|a, b| a.0.cmp(&b.0));
+
+            for ((a_id, proof), (b_id, comm)) in proofs.iter().zip(commits) {
+                if *a_id != b_id {
+                    panic!("this should be checked in party probably");
+                }
+
+                if proof.0 != comm {
+                    self.party_commands
+                        .send(NodeCommands::ProofInvalid(cir_id.clone()))
+                        .expect("Send should succeed");
+                    panic!("Abort");
+                }
+            }
+
+            if !verify_commitments(&proofs.into_iter().map(|(_, c)| c).collect()) {
+                self.party_commands
+                    .send(NodeCommands::ProofInvalid(cir_id.clone()))
+                    .expect("Send should succeed");
+                panic!("Abort");
+            }
+
+            self.party_commands
+                .send(NodeCommands::ProofVerified(cir_id.clone()))
+                .expect("Send should succeed");
+        }
+
+        cir_ids.into_iter().collect()
+    }
+
+    async fn wait_for_others(&mut self, mut cir_ids: HashSet<CirId>, calculator: &Calculator) {
+        while !cir_ids.is_empty() {
+            for id in self.valid_proofs.iter() {
+                cir_ids.remove(id);
+            }
+            if !self.invalid_proofs.is_empty() {
+                panic!("Abort");
+            }
+            if cir_ids.is_empty() {
+                return;
+            }
+            let event = match self.party_events.recv().await {
+                Some(e) => e,
+                None => {
+                    log::debug!("party channel closed");
+                    return;
+                }
+            };
+            self.handle_event(event, &calculator);
+        }
+    }
+
     async fn try_proceed_with_mul(
         &mut self,
         state: NodeState,
@@ -380,7 +490,7 @@ impl Node {
         }
     }
 
-    pub async fn run(mut self, exp: DecoratedExpression) {
+    pub async fn run(mut self, exp: DecoratedExpression) -> u64 {
         self.party_commands
             .send(NodeCommands::NeedAlpha)
             .expect("Send should succeed");
@@ -438,7 +548,7 @@ impl Node {
                 Some(e) => e,
                 None => {
                     log::debug!("party channel closed");
-                    return;
+                    panic!("abort");
                 }
             };
 
@@ -446,56 +556,125 @@ impl Node {
         }
 
         // we have final share lets open it now
-
         let last_node_id = circuit_nodes
             .last()
             .expect("at least one should exist")
             .cir_id();
 
-        /// send all proofs
-        /// wait for all proof
-        /// checks proof
-        /// continue
-        /// annoce bad guy
-        /// wait for all
+        // send all proofs
+        for (cir_id, proof) in self.my_proofs.iter() {
+            self.party_commands
+                .send(NodeCommands::ProofFor(cir_id.clone(), proof.clone()))
+                .expect("Send should succeed");
+        }
+
+        // wait for all proofs
+        self.wait_for_proofs(&calculator).await;
+
+        // check proofs
+        let to_check = self.check_proofs();
+
+        // wait for all nodes to conclude their checks
+        self.wait_for_others(to_check, &calculator).await;
+
+        self.evaluate_last(last_node_id, &calculator).await
+    }
+
+    async fn evaluate_last(&mut self, last_id: CirId, calculator: &Calculator) -> u64 {
         let evaluated = self
             .evaluated
-            .remove(&last_node_id)
+            .remove(&last_id)
             .expect("we finished the evaluation");
 
+        self.original_shares
+            .insert(last_id.clone(), evaluated.clone());
+
         self.party_commands
-            .send(NodeCommands::OpenShare(evaluated, last_node_id.clone()))
+            .send(NodeCommands::OpenShare(evaluated, last_id.clone()))
             .expect("should succeed");
 
-        // now we wait for all shares :D
         loop {
             let event = match self.party_events.recv().await {
                 Some(e) => e,
                 None => {
                     log::debug!("party channel closed");
-                    return;
+                    panic!("abort");
                 }
             };
-            match event {
-                NodeEvents::CirReady(c, s) => {
-                    if c == last_node_id {
-                        let el = sum_elems(&s.into_iter().map(|(e, _)| e).collect());
 
-                        if self.id == 0 {
-                            let n = <u64>::from_str_radix(
-                                format!("{:?}", el.to_repr()).strip_prefix("0x").unwrap(),
-                                16,
-                            )
-                            .unwrap();
-                            println!("got {:?}", n);
-                            println!("bytes {:?}", el.to_repr().0);
-                        }
-                        return;
-                    }
-                }
-                // ignore
-                _ => {}
+            self.handle_event(event, &calculator);
+
+            if self.fully_open.contains_key(&last_id) {
+                break;
             }
         }
+
+        let shares = self.fully_open.remove(&last_id).expect("checked");
+
+        let ev_elem = sum_elems(&shares.into_iter().map(|(e, _)| e).collect());
+
+        let n = <u64>::from_str_radix(
+            format!("{:?}", ev_elem.to_repr())
+                .strip_prefix("0x")
+                .unwrap(),
+            16,
+        )
+        .unwrap();
+        let ev_x = calculator.generate_commitment_share(
+            ev_elem.clone(),
+            self.original_shares.remove(&last_id).expect("checked"),
+        );
+
+        let (ev_hash, ev_salt) = Calculator::generate_commitment(&ev_x);
+
+        let ev_proof = (ev_hash, ev_x.clone(), ev_salt);
+
+        self.my_proofs.clear();
+        self.my_proofs.insert(last_id.clone(), ev_proof);
+
+        self.party_commands
+            .send(NodeCommands::CommitmentFor(last_id.clone(), ev_hash))
+            .expect("send should succeed");
+
+        loop {
+            let event = match self.party_events.recv().await {
+                Some(e) => e,
+                None => {
+                    log::debug!("party channel closed");
+                    panic!("abort");
+                }
+            };
+
+            self.handle_event(event, &calculator);
+
+            if self.commitments.contains_key(&last_id) {
+                break;
+            }
+        }
+
+        for (cir_id, proof) in self.my_proofs.iter() {
+            self.party_commands
+                .send(NodeCommands::ProofFor(cir_id.clone(), proof.clone()))
+                .expect("Send should succeed");
+        }
+
+        // wait for all proofs
+        self.wait_for_proofs(&calculator).await;
+
+        if self.id == 0 {
+            println!("loop2 {:?}", last_id);
+        }
+        // check proofs
+        let to_check = self.check_proofs();
+
+        // wait for all nodes to conclude their checks
+        self.wait_for_others(to_check, &calculator).await;
+
+        // yay
+        if self.id == 0 {
+            println!("Got {:?}", n);
+        }
+
+        n
     }
 }

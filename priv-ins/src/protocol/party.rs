@@ -22,6 +22,8 @@ pub struct Party<N: Network + Send> {
     node_commitments: HashMap<NodeId, HashSet<CirId>>,
     proofs_per: HashMap<CirId, Vec<(NodeId, CommitmentProof)>>,
     node_proofs: HashMap<NodeId, HashSet<CirId>>,
+    status_per: HashMap<CirId, u8>,
+    node_statuses: HashMap<NodeId, HashSet<CirId>>,
     n_parties: u8,
 }
 
@@ -49,6 +51,8 @@ impl<N: Network + Send> Party<N> {
             node_commitments: HashMap::new(),
             proofs_per: HashMap::new(),
             node_proofs: HashMap::new(),
+            status_per: HashMap::new(),
+            node_statuses: HashMap::new(),
         }
     }
     /// collects share from given node for given circuit node.
@@ -115,6 +119,30 @@ impl<N: Network + Send> Party<N> {
         ps.len() == self.n_parties as usize
     }
 
+    fn collect_status(&mut self, from: NodeId, valid: bool, cid: CirId) -> bool {
+        let statuses = self.node_statuses.entry(from).or_insert(HashSet::new());
+
+        if !statuses.insert(cid.clone()) {
+            log::debug!(
+                "node {} tried to submit more than once its status for circuit node {}",
+                from,
+                cid.clone()
+            );
+
+            // Return notready to not trigger twice ready logic.
+            return false;
+        }
+
+        if !valid {
+            return true;
+        }
+
+        let count = self.status_per.entry(cid).or_insert(0);
+        *count += 1;
+
+        *count == self.n_parties
+    }
+
     fn handle_network_msg(&mut self, from: NodeId, msg: Msg) {
         if self.id == 0 {
             println!("NetworkMsg from {:?} {:?}", from, msg);
@@ -150,6 +178,20 @@ impl<N: Network + Send> Party<N> {
                     let proofs = self.proofs_per.remove(&cid).expect("We have collected it");
                     self.node_events
                         .send(NodeEvents::ProofsFor(cid, proofs))
+                        .expect("Send should succeed");
+                }
+            }
+            Msg::ProofInvalid(cid) => {
+                if self.collect_status(from, false, cid.clone()) {
+                    self.node_events
+                        .send(NodeEvents::ProofInvalid(cid))
+                        .expect("Send should succeed");
+                }
+            }
+            Msg::ProofValid(cid) => {
+                if self.collect_status(from, true, cid.clone()) {
+                    self.node_events
+                        .send(NodeEvents::ProofValid(cid))
                         .expect("Send should succeed");
                 }
             }
@@ -191,6 +233,12 @@ impl<N: Network + Send> Party<N> {
             }
             NodeCommands::ProofFor(cir_id, proof) => {
                 self.network.broadcast(Msg::Proof(cir_id, proof));
+            }
+            NodeCommands::ProofVerified(cir_id) => {
+                self.network.broadcast(Msg::ProofValid(cir_id));
+            }
+            NodeCommands::ProofInvalid(cir_id) => {
+                self.network.broadcast(Msg::ProofInvalid(cir_id));
             }
         }
     }
