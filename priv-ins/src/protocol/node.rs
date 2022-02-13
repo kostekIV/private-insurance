@@ -1,4 +1,5 @@
 use crate::crypto::shares::{sum_elems, Beaver, BeaverShare, Elem, Share, Shares};
+use crate::ff::PrimeField;
 use crate::protocol::{sub_id, Alpha, CirId, NodeCommands, NodeEvents, NodeId, VarId};
 use async_recursion::async_recursion;
 use std::collections::HashMap;
@@ -29,12 +30,12 @@ enum NodeState {
 impl Debug for NodeState {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Proceed => { f.write_str("Proceed") }
-            WaitForVariable(var) => { f.write_str(format!("WaitForVariable(var: {})", var).as_str()) }
-            WaitForBeaver(_, _, _) => { f.write_str("WaitForBeaver") }
-            WaitForShares(_, _, _, _) => { f.write_str("WaitForShares") }
-            HaveBeaver(_, _, _) => { f.write_str("HaveBeaver") }
-            HaveShares(_, _, _, _) => { f.write_str("HaveShares") }
+            Proceed => f.write_str("Proceed"),
+            WaitForVariable(var) => f.write_str(format!("WaitForVariable(var: {})", var).as_str()),
+            WaitForBeaver(_, _, _) => f.write_str("WaitForBeaver"),
+            WaitForShares(_, _, _, _) => f.write_str("WaitForShares"),
+            HaveBeaver(_, _, _) => f.write_str("HaveBeaver"),
+            HaveShares(_, _, _, _) => f.write_str("HaveShares"),
         }
     }
 }
@@ -414,11 +415,19 @@ impl Node {
             }
         }
 
-        let last_node_id = circuit_nodes.last().expect("at least one should exist").cir_id();
+        let last_node_id = circuit_nodes
+            .last()
+            .expect("at least one should exist")
+            .cir_id();
 
-        let evaluated = self.evaluated.remove(&last_node_id).expect("we finished the evaluation");
+        let evaluated = self
+            .evaluated
+            .remove(&last_node_id)
+            .expect("we finished the evaluation");
 
-        self.party_commands.send(NodeCommands::OpenShare(evaluated, last_node_id.clone())).expect("should succeed");
+        self.party_commands
+            .send(NodeCommands::OpenShare(evaluated, last_node_id.clone()))
+            .expect("should succeed");
 
         loop {
             let event = match self.party_events.recv().await {
@@ -434,7 +443,12 @@ impl Node {
                         let el = sum_elems(&s.into_iter().map(|(e, _)| e).collect());
 
                         if self.id == 0 {
-                            println!("got {:?}", el);
+                            let n = <u64>::from_str_radix(
+                                format!("{:?}", el.to_repr()).strip_prefix("0x").unwrap(),
+                                16,
+                            )
+                            .unwrap();
+                            println!("got {:?}", n);
                         }
                         return;
                     }
@@ -443,6 +457,5 @@ impl Node {
                 _ => {}
             }
         }
-
     }
 }
