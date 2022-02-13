@@ -45,4 +45,13 @@ Next complete a form for building building an arithmetic circuit in UI and submi
 
 ## How to run UI
 
-## TODO UI running instructions
+```
+npm start
+```
+In `insur-front` folder.
+
+Browser should authomatically open [http://localhost:3000](http://localhost:3000), which is UI page address. 
+
+Fill all fields and press "submit" to send amount of parties and circut description for protocol.
+
+### For proper operation both protocol and UI should run at the same time.
