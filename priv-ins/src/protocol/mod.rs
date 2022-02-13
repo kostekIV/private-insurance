@@ -8,7 +8,7 @@ mod test;
 
 use std::collections::HashMap;
 
-use crate::crypto::shares::{BeaverShare, Commitment, Elem, Share, Shares};
+use crate::crypto::shares::{BeaverShare, Commitment, CommitmentProof, Elem, Share, Shares};
 use crate::expressions::Expression;
 use crate::protocol::{
     expression::decorate_expression, network::Network, node::Node, party::Party,
@@ -64,6 +64,8 @@ pub enum NodeCommands {
     NeedAlpha,
     /// Broadcast commitment for cir_id
     CommitmentFor(CirId, Commitment),
+    /// Broadcast proof for cir_id
+    ProofFor(CirId, CommitmentProof),
 }
 
 #[derive(Debug)]
@@ -79,7 +81,9 @@ pub enum NodeEvents {
     /// beaver for node in circuit is ready
     BeaverFor(CirId, BeaverShare),
     /// got all commitments for cir_id
-    CommitmentsFor(CirId, Vec<Commitment>),
+    CommitmentsFor(CirId, Vec<(NodeId, Commitment)>),
+    /// got all proofs for cir_id
+    ProofsFor(CirId, Vec<(NodeId, CommitmentProof)>),
 }
 
 #[derive(Debug)]

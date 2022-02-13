@@ -56,7 +56,8 @@ pub struct Node {
     variable_shares: HashMap<CirId, Share>,
     variable_salts: HashMap<CirId, Elem>,
     my_proofs: HashMap<CirId, CommitmentProof>,
-    commitments: HashMap<CirId, Vec<Commitment>>,
+    proofs: HashMap<CirId, Vec<(NodeId, CommitmentProof)>>,
+    commitments: HashMap<CirId, Vec<(NodeId, Commitment)>>,
 }
 
 impl Node {
@@ -80,6 +81,7 @@ impl Node {
             variable_salts: HashMap::new(),
             my_proofs: HashMap::new(),
             commitments: HashMap::new(),
+            proofs: HashMap::new(),
         }
     }
     /// checks if we have both x - r and [r] for variable under `var_node` if so put x - r + [r] under
@@ -188,6 +190,81 @@ impl Node {
         Proceed
     }
 
+    fn handle_event(&mut self, event: NodeEvents, calculator: &Calculator) {
+        if self.id == 0 {
+            println!("NodeEvents::{:?}", event);
+        }
+
+        match event {
+            NodeEvents::CirReady(c_id, s) => {
+                // evaluate node as sum of gotten shares
+                if self.fully_open.contains_key(&c_id) {
+                    log::debug!("got twice opened value for {}", c_id);
+                }
+
+                self.fully_open.insert(c_id, s);
+            }
+            NodeEvents::SelfVariableReady(c_id, r, r_share) => {
+                if !self.variables.contains_key(&c_id) {
+                    log::debug!("got foreign variable");
+                    return;
+                }
+                let x = self.variables.get(&c_id).expect("checked");
+
+                let xr = x.sub(r);
+                // send to everyone x-r
+                self.party_commands
+                    .send(NodeCommands::OpenSelfShare(xr, c_id.clone()))
+                    .expect("send should succeed");
+                // evaluate our variable as (x-r) + r_share
+                self.evaluated
+                    .insert(c_id, calculator.add_const(r_share, xr));
+            }
+            NodeEvents::NodeVariableReady(c_id, s) => {
+                if self.variable_salts.contains_key(&c_id) {
+                    log::debug!("got twice value for {}", c_id);
+                    return;
+                }
+
+                self.variable_salts.insert(c_id.clone(), s);
+                self.combine_variable_if_full(c_id, &calculator);
+            }
+            NodeEvents::BeaverFor(c_id, beaver) => {
+                if self.beavers.contains_key(&c_id) {
+                    log::debug!("got twice value for {}", c_id);
+                    return;
+                }
+
+                self.beavers.insert(c_id, beaver);
+            }
+            NodeEvents::NodeVariableShareReady(c_id, s) => {
+                if self.variable_shares.contains_key(&c_id) {
+                    log::debug!("got twice value for {}", c_id);
+                    return;
+                }
+
+                self.variable_shares.insert(c_id.clone(), s);
+                self.combine_variable_if_full(c_id, &calculator);
+            }
+            NodeEvents::CommitmentsFor(cir_id, commitments) => {
+                if self.commitments.contains_key(&cir_id) {
+                    log::debug!("got twice commitments for {}", cir_id);
+                    return;
+                }
+
+                self.commitments.insert(cir_id, commitments);
+            }
+            NodeEvents::ProofsFor(cir_id, proofs) => {
+                if self.proofs.contains_key(&cir_id) {
+                    log::debug!("got twice proofs for {}", cir_id);
+                    return;
+                }
+
+                self.proofs.insert(cir_id, proofs);
+            }
+        }
+    }
+
     /// we got beaver lets start evaluating mul node
     async fn handle_beaver(
         &mut self,
@@ -255,6 +332,54 @@ impl Node {
         WaitForCommitments(e_id, f_id)
     }
 
+    fn state_transition(&self, state: NodeState) -> NodeState {
+        match state {
+            WaitForVariable(cir_id) => {
+                if self.evaluated.contains_key(&cir_id) {
+                    Proceed
+                } else {
+                    WaitForVariable(cir_id)
+                }
+            }
+            WaitForBeaver(cir_id, s1, s2) => {
+                if self.beavers.contains_key(&cir_id) {
+                    HaveBeaver(cir_id, s1, s2)
+                } else {
+                    WaitForBeaver(cir_id, s1, s2)
+                }
+            }
+            WaitForShares(c, e, f, beaver) => {
+                if self.fully_open.contains_key(&e) && self.fully_open.contains_key(&f) {
+                    HaveShares(c, e, f, beaver)
+                } else {
+                    WaitForShares(c, e, f, beaver)
+                }
+            }
+            WaitForCommitments(c1, c2) => {
+                if self.commitments.contains_key(&c1) && self.commitments.contains_key(&c2) {
+                    Proceed
+                } else {
+                    WaitForCommitments(c1, c2)
+                }
+            }
+            state => state,
+        }
+    }
+
+    async fn try_proceed_with_mul(
+        &mut self,
+        state: NodeState,
+        calculator: &Calculator,
+    ) -> NodeState {
+        match state {
+            HaveBeaver(cir_id, ev1, ev2) => self.handle_beaver(&calculator, cir_id, ev1, ev2).await,
+            HaveShares(cir_id, e_id, f_id, beaver) => {
+                self.handle_shares(&calculator, cir_id, e_id, f_id, beaver)
+            }
+            s => s,
+        }
+    }
+
     pub async fn run(mut self, exp: DecoratedExpression) {
         self.party_commands
             .send(NodeCommands::NeedAlpha)
@@ -287,60 +412,23 @@ impl Node {
                 break;
             }
 
-            state = match state {
-                WaitForVariable(cir_id) => {
-                    if self.evaluated.contains_key(&cir_id) {
-                        Proceed
-                    } else {
-                        WaitForVariable(cir_id)
-                    }
-                }
-                WaitForBeaver(cir_id, s1, s2) => {
-                    if self.beavers.contains_key(&cir_id) {
-                        HaveBeaver(cir_id, s1, s2)
-                    } else {
-                        WaitForBeaver(cir_id, s1, s2)
-                    }
-                }
-                WaitForShares(c, e, f, beaver) => {
-                    if self.fully_open.contains_key(&e) && self.fully_open.contains_key(&f) {
-                        HaveShares(c, e, f, beaver)
-                    } else {
-                        WaitForShares(c, e, f, beaver)
-                    }
-                }
-                WaitForCommitments(c1, c2) => {
-                    if self.commitments.contains_key(&c1) && self.commitments.contains_key(&c2) {
-                        Proceed
-                    } else {
-                        WaitForCommitments(c1, c2)
-                    }
-                }
-                state => state,
-            };
+            state = self.state_transition(state);
 
             if self.id == 0 {
                 println!("NodeState: {:?}", state);
             }
 
             if self.can_proceed(&state) {
-                log::debug!("{}", idx);
                 let evaluating = circuit_nodes.get(idx).expect("we control it");
                 state = self.try_proceed(&calculator, evaluating);
                 idx += 1;
                 continue;
             }
 
-            state = match state {
-                HaveBeaver(cir_id, ev1, ev2) => {
-                    self.handle_beaver(&calculator, cir_id, ev1, ev2).await
-                }
-                HaveShares(cir_id, e_id, f_id, beaver) => {
-                    self.handle_shares(&calculator, cir_id, e_id, f_id, beaver)
-                }
-                s => s,
-            };
+            state = self.try_proceed_with_mul(state, &calculator).await;
 
+            // guard to avoid deadlock in situation when we are not sending or expecting any message
+            // but can proceed without waiting for anything
             if self.can_proceed(&state) {
                 idx += 1;
                 continue;
@@ -354,70 +442,7 @@ impl Node {
                 }
             };
 
-            if self.id == 0 {
-                println!("NodeEvents::{:?}", event);
-            }
-
-            match event {
-                NodeEvents::CirReady(c_id, s) => {
-                    // evaluate node as sum of gotten shares
-                    if self.fully_open.contains_key(&c_id) {
-                        log::debug!("got twice opened value for {}", c_id);
-                    }
-
-                    self.fully_open.insert(c_id, s);
-                }
-                NodeEvents::SelfVariableReady(c_id, r, r_share) => {
-                    if !self.variables.contains_key(&c_id) {
-                        log::debug!("got foreign variable");
-                        continue;
-                    }
-                    let x = self.variables.get(&c_id).expect("checked");
-
-                    let xr = x.sub(r);
-                    // send to everyone x-r
-                    self.party_commands
-                        .send(NodeCommands::OpenSelfShare(xr, c_id.clone()))
-                        .expect("send should succeed");
-                    // evaluate our variable as (x-r) + r_share
-                    self.evaluated
-                        .insert(c_id, calculator.add_const(r_share, xr));
-                }
-                NodeEvents::NodeVariableReady(c_id, s) => {
-                    if self.variable_salts.contains_key(&c_id) {
-                        log::debug!("got twice value for {}", c_id);
-                        continue;
-                    }
-
-                    self.variable_salts.insert(c_id.clone(), s);
-                    self.combine_variable_if_full(c_id, &calculator);
-                }
-                NodeEvents::BeaverFor(c_id, beaver) => {
-                    if self.beavers.contains_key(&c_id) {
-                        log::debug!("got twice value for {}", c_id);
-                        continue;
-                    }
-
-                    self.beavers.insert(c_id, beaver);
-                }
-                NodeEvents::NodeVariableShareReady(c_id, s) => {
-                    if self.variable_shares.contains_key(&c_id) {
-                        log::debug!("got twice value for {}", c_id);
-                        continue;
-                    }
-
-                    self.variable_shares.insert(c_id.clone(), s);
-                    self.combine_variable_if_full(c_id, &calculator);
-                }
-                NodeEvents::CommitmentsFor(cir_id, commitments) => {
-                    if self.commitments.contains_key(&cir_id) {
-                        log::debug!("got twice commitments for {}", cir_id);
-                        continue;
-                    }
-
-                    self.commitments.insert(cir_id, commitments);
-                }
-            }
+            self.handle_event(event, &calculator);
         }
 
         // we have final share lets open it now
