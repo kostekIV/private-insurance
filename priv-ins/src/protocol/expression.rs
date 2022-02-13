@@ -1,8 +1,6 @@
-use crate::crypto::shares::{Elem, Share};
+use crate::crypto::shares::Elem;
 use crate::expressions::{BinaryOp, Expression};
 use crate::protocol::{CirId, NodeId, Provider, VarId};
-use std::collections::HashMap;
-use std::iter;
 
 type BExpression = Box<DecoratedExpression>;
 
@@ -89,7 +87,7 @@ impl DecoratedExpression {
                 x.extend(e2.self_var_ids(node_id));
                 x
             }
-            DecoratedExpression::Mul(e1, e2, cir_id) => {
+            DecoratedExpression::Mul(e1, e2, _) => {
                 let mut x = e1.self_var_ids(node_id);
                 x.extend(e2.self_var_ids(node_id));
                 x

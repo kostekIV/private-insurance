@@ -1,13 +1,13 @@
-use crate::crypto::shares::{BeaverShare, Share, Shares};
-use crate::protocol::network::{Msg, Network};
+use crate::crypto::shares::{Commitment, Share, Shares};
 use crate::protocol::{
-    Alpha, CirId, DealerCommands, DealerEvents, NodeCommands, NodeEvents, NodeId, VarId,
+    network::{Msg, Network},
+    Alpha, CirId, DealerCommands, DealerEvents, NodeCommands, NodeEvents, NodeId,
 };
 use std::collections::{HashMap, HashSet};
-use tokio::select;
-
-use futures::prelude::*;
-use tokio::sync::mpsc::{UnboundedReceiver as Receiver, UnboundedSender as Sender};
+use tokio::{
+    select,
+    sync::mpsc::{UnboundedReceiver as Receiver, UnboundedSender as Sender},
+};
 
 pub struct Party<N: Network + Send> {
     id: NodeId,
@@ -18,6 +18,8 @@ pub struct Party<N: Network + Send> {
     network: N,
     shares_per: HashMap<CirId, Shares>,
     opened_shares: HashMap<NodeId, HashSet<CirId>>,
+    commitments_per: HashMap<CirId, Vec<Commitment>>,
+    node_commitments: HashMap<NodeId, HashSet<CirId>>,
     n_parties: u8,
 }
 
@@ -41,6 +43,8 @@ impl<N: Network + Send> Party<N> {
             n_parties,
             opened_shares: HashMap::new(),
             shares_per: HashMap::new(),
+            commitments_per: HashMap::new(),
+            node_commitments: HashMap::new(),
         }
     }
     /// collects share from given node for given circuit node.
@@ -66,6 +70,26 @@ impl<N: Network + Send> Party<N> {
         shares.len() == self.n_parties as usize
     }
 
+    fn collect_commitment(&mut self, from: NodeId, comm: Commitment, cid: CirId) -> bool {
+        let commited_to = self.node_commitments.entry(from).or_insert(HashSet::new());
+
+        if !commited_to.insert(cid.clone()) {
+            log::debug!(
+                "node {} tried to submit more than once its commitment for circuit node {}",
+                from,
+                cid.clone()
+            );
+
+            // Return notready to not trigger twice ready logic.
+            return false;
+        }
+
+        let comms = self.commitments_per.entry(cid).or_insert(Vec::new());
+        comms.push(comm);
+
+        comms.len() == self.n_parties as usize
+    }
+
     pub(crate) async fn run(&mut self) {
         loop {
             select! {
@@ -82,6 +106,12 @@ impl<N: Network + Send> Party<N> {
                         }
                         Msg::OpenVariable(cid, elem) => {
                             self.node_events.send(NodeEvents::NodeVariableReady(cid, elem)).expect("Send should succeed");
+                        }
+                        Msg::Commit(cid, comm) => {
+                            if self.collect_commitment(from, comm, cid.clone()) {
+                                let comms = self.commitments_per.remove(&cid).expect("We have collected it");
+                                self.node_events.send(NodeEvents::CommitmentsFor(cid, comms)).expect("Send should succeed");
+                            }
                         }
                     }
                 },
@@ -118,6 +148,9 @@ impl<N: Network + Send> Party<N> {
                             self.dealer.0.send((self.id,
                                 DealerCommands::NeedAlpha)
                             ).expect("Send should succeed");
+                        },
+                        NodeCommands::CommitmentFor(cir_id, comm) => {
+                            self.network.broadcast(Msg::Commit(cir_id, comm));
                         }
                     }
                 },
@@ -151,7 +184,7 @@ impl<N: Network + Send> Party<N> {
                             ).expect("Send should succeed");
                         }
                         DealerEvents::Alpha(alpha) => {
-                            self.alpha_channel.send(Alpha(alpha));
+                            self.alpha_channel.send(Alpha(alpha)).expect("Send should succeed");
                         }
                     }
                 }

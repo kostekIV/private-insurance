@@ -12,6 +12,11 @@ pub type Shares = Vec<Share>;
 pub type BeaverShare = (Share, Share, Share);
 pub type Beaver = (Elems, Elems, Elems);
 
+pub type Hash = [u8; 32];
+pub type Salt = Vec<u8>;
+pub type Commitment = Hash;
+pub type CommitmentProof = (Commitment, Elem, Salt);
+
 pub fn elems_from_secret(secret: &Elem, n_parties: u8) -> Elems {
     let mut shares = random_shares(n_parties - 1);
     let sum = sum_elems(&shares);
@@ -63,20 +68,15 @@ pub fn sum_elems(elems: &Elems) -> Elem {
     elems.iter().fold(Elem::zero(), |a, &b| a + b)
 }
 
-pub fn compute_commitment(elem: &Elem, noise: &Vec<u8>) -> [u8; 32] {
-    hash(&[&elem.to_repr().0[..], noise].concat())
+pub fn compute_commitment(elem: &Elem, salt: &Salt) -> Hash {
+    hash(&[&elem.to_repr().0[..], salt].concat())
 }
 
-pub fn generate_commitment(elem: &Elem) -> ([u8; 32], Vec<u8>) {
-    let noise = random_noise();
-    (compute_commitment(elem, &noise), noise)
-}
-
-fn random_noise() -> Vec<u8> {
+pub fn random_salt() -> Salt {
     rand::thread_rng().gen::<[u8; 32]>().to_vec()
 }
 
-pub fn hash(x: &[u8]) -> [u8; 32] {
+pub fn hash(x: &[u8]) -> Hash {
     Sha3_256::digest(x).into()
 }
 

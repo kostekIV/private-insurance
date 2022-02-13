@@ -1,7 +1,7 @@
 use crate::{
-    crypto::{
-        shares::{self, BeaverShare, Elem, Share},
-        Fp,
+    crypto::shares::{
+        self, compute_commitment, random_salt, BeaverShare, CommitmentProof, Elem, Hash, Salt,
+        Share,
     },
     ff::Field,
     protocol::NodeId,
@@ -67,15 +67,20 @@ impl Calculator {
         (share.0 * constant, share.1 * constant)
     }
 
+    pub fn generate_commitment(elem: &Elem) -> (Hash, Salt) {
+        let salt = random_salt();
+        (compute_commitment(elem, &salt), salt)
+    }
+
     /// Generates element that we want to commit for partial opening d_i = a_i * x' - m(x)_i
     pub fn generate_commitment_share(&self, opened: Elem, share: Share) -> Elem {
         self.alpha_share * opened - share.1
     }
 }
 
-fn verify_commitments(commitments: Vec<([u8; 32], Elem, Vec<u8>)>) -> bool {
-    for (hash, elem, noise) in commitments.iter() {
-        if *hash != shares::compute_commitment(elem, noise) {
+fn verify_commitments(commitments: &Vec<CommitmentProof>) -> bool {
+    for (hash, elem, salt) in commitments.iter() {
+        if *hash != shares::compute_commitment(elem, salt) {
             return false;
         }
     }

@@ -1,37 +1,34 @@
-use crate::crypto::shares::{sum_elems, Beaver, BeaverShare, Elem, Share, Shares};
+use crate::crypto::shares::{
+    sum_elems, BeaverShare, Commitment, CommitmentProof, Elem, Share, Shares,
+};
 use crate::ff::PrimeField;
-use crate::protocol::{sub_id, Alpha, CirId, NodeCommands, NodeEvents, NodeId, VarId};
-use async_recursion::async_recursion;
-use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
-use std::ops::Sub;
-use std::process::id;
+use std::{collections::HashMap, fmt::Debug, ops::Sub};
 
-use crate::protocol::arithmetics::Calculator;
-use crate::protocol::expression::{DecoratedExpression, MidEvalExpression};
-use crate::protocol::node::NodeState::{
-    HaveBeaver, HaveShares, Proceed, WaitForBeaver, WaitForShares, WaitForVariable,
+use crate::protocol::{
+    arithmetics::Calculator,
+    expression::{DecoratedExpression, MidEvalExpression},
+    node::NodeState::{
+        HaveBeaver, HaveShares, Proceed, WaitForBeaver, WaitForCommitments, WaitForShares,
+        WaitForVariable,
+    },
+    sub_id, Alpha, CirId, NodeCommands, NodeEvents, NodeId,
 };
-use futures::prelude::*;
-use tokio::select;
-use tokio::sync::mpsc::{
-    unbounded_channel, UnboundedReceiver as Receiver, UnboundedSender as Sender,
-};
+use tokio::sync::mpsc::{UnboundedReceiver as Receiver, UnboundedSender as Sender};
 
 #[derive(Debug)]
 /// Internal state of node with following transitions:
-/// Proceed -> WaitForVariable
-/// WaitForVariable -> Proceed
-/// Proceed -> WaitForBeaver
-/// WaitForBeaver -> HaveBeaver
+/// Proceed -> WaitForVariable | WaitForBeaver | Proceed
+/// WaitForVariable -> Proceed | WaitForVariable
+/// WaitForBeaver -> HaveBeaver | WaitForBeaver
 /// HaveBeaver -> WaitForShares
-/// WaitForShares -> HaveShares
-/// HaveShares -> Proceed
+/// WaitForShares -> HaveShares | WaitForShare
+/// HaveShares -> WaitForCommitments
+/// WaitForCommitments -> Proceed | WaitForCommitments
 ///
 /// In particular following path represents multiplication phases.
-/// WaitForBeaver -> HaveBeaver -> WaitForShares -> HaveShares
+/// WaitForBeaver -> HaveBeaver -> WaitForShares -> HaveShares -> WaitForCommitments
 enum NodeState {
-    /// we can procceed with evaluating
+    /// we can proceed with evaluating
     Proceed,
     /// waiting for shares of variable in the cir_id
     WaitForVariable(CirId),
@@ -43,6 +40,8 @@ enum NodeState {
     HaveBeaver(CirId, Share, Share),
     /// have all shares of (x - e) and (y - f) used in mul
     HaveShares(CirId, CirId, CirId, BeaverShare),
+    /// wait for all commitments for e and f
+    WaitForCommitments(CirId, CirId),
 }
 
 pub struct Node {
@@ -56,6 +55,8 @@ pub struct Node {
     beavers: HashMap<CirId, BeaverShare>,
     variable_shares: HashMap<CirId, Share>,
     variable_salts: HashMap<CirId, Elem>,
+    my_proofs: HashMap<CirId, CommitmentProof>,
+    commitments: HashMap<CirId, Vec<Commitment>>,
 }
 
 impl Node {
@@ -77,6 +78,8 @@ impl Node {
             beavers: HashMap::new(),
             variable_shares: HashMap::new(),
             variable_salts: HashMap::new(),
+            my_proofs: HashMap::new(),
+            commitments: HashMap::new(),
         }
     }
     /// checks if we have both x - r and [r] for variable under `var_node` if so put x - r + [r] under
@@ -114,18 +117,8 @@ impl Node {
 
     fn can_proceed(&self, state: &NodeState) -> bool {
         match state {
-            Proceed => {
-                if self.id == 0 {
-                    println!("can_proceed true");
-                };
-                true
-            }
-            _ => {
-                if self.id == 0 {
-                    println!("can_proceed false");
-                };
-                false
-            }
+            Proceed => true,
+            _ => false,
         }
     }
 
@@ -190,12 +183,12 @@ impl Node {
                     return WaitForVariable(cir_id.to_string());
                 }
             }
-            _ => {}
         }
 
         Proceed
     }
 
+    /// we got beaver lets start evaluating mul node
     async fn handle_beaver(
         &mut self,
         calculator: &Calculator,
@@ -225,6 +218,7 @@ impl Node {
         WaitForShares(cir_id, e_id, f_id, beaver)
     }
 
+    /// we got all shares for mul nodes (of (x - e) and (y - f)
     fn handle_shares(
         &mut self,
         calculator: &Calculator,
@@ -239,14 +233,32 @@ impl Node {
         let e_elem = sum_elems(&e_shares.into_iter().map(|(e, _)| e).collect());
         let f_elem = sum_elems(&f_shares.into_iter().map(|(e, _)| e).collect());
 
+        let (e_hash, e_salt) = Calculator::generate_commitment(&e_elem);
+        let (f_hash, f_salt) = Calculator::generate_commitment(&f_elem);
+
+        let e_proof = (e_hash, e_elem.clone(), e_salt);
+        let f_proof = (f_hash, f_elem.clone(), f_salt);
+
+        self.my_proofs.insert(e_id.clone(), e_proof);
+        self.my_proofs.insert(f_id.clone(), f_proof);
+
+        self.party_commands
+            .send(NodeCommands::CommitmentFor(e_id.clone(), e_hash))
+            .expect("send should succeed");
+        self.party_commands
+            .send(NodeCommands::CommitmentFor(f_id.clone(), f_hash))
+            .expect("send should succeed");
+
         let v = calculator.mul(beaver, e_elem, f_elem);
         self.evaluated.insert(cir_id, v);
 
-        Proceed
+        WaitForCommitments(e_id, f_id)
     }
 
     pub async fn run(mut self, exp: DecoratedExpression) {
-        self.party_commands.send(NodeCommands::NeedAlpha);
+        self.party_commands
+            .send(NodeCommands::NeedAlpha)
+            .expect("Send should succeed");
 
         // announce need for beaver for this circuit nodes
         for mul_id in exp.mul_ids() {
@@ -255,7 +267,7 @@ impl Node {
                 .expect("send should succeed");
         }
 
-        // announce to delear our variable
+        // announce to dealer our variable
         for (var_id, _) in exp.self_var_ids(Some(self.id)) {
             self.party_commands
                 .send(NodeCommands::OpenSelfInput(var_id))
@@ -295,6 +307,13 @@ impl Node {
                         HaveShares(c, e, f, beaver)
                     } else {
                         WaitForShares(c, e, f, beaver)
+                    }
+                }
+                WaitForCommitments(c1, c2) => {
+                    if self.commitments.contains_key(&c1) && self.commitments.contains_key(&c2) {
+                        Proceed
+                    } else {
+                        WaitForCommitments(c1, c2)
                     }
                 }
                 state => state,
@@ -374,8 +393,9 @@ impl Node {
                     self.combine_variable_if_full(c_id, &calculator);
                 }
                 NodeEvents::BeaverFor(c_id, beaver) => {
-                    if !self.beavers.contains_key(&c_id) {
+                    if self.beavers.contains_key(&c_id) {
                         log::debug!("got twice value for {}", c_id);
+                        continue;
                     }
 
                     self.beavers.insert(c_id, beaver);
@@ -389,6 +409,14 @@ impl Node {
                     self.variable_shares.insert(c_id.clone(), s);
                     self.combine_variable_if_full(c_id, &calculator);
                 }
+                NodeEvents::CommitmentsFor(cir_id, commitments) => {
+                    if self.commitments.contains_key(&cir_id) {
+                        log::debug!("got twice commitments for {}", cir_id);
+                        continue;
+                    }
+
+                    self.commitments.insert(cir_id, commitments);
+                }
             }
         }
 
@@ -399,6 +427,12 @@ impl Node {
             .expect("at least one should exist")
             .cir_id();
 
+        /// send all proofs
+        /// wait for all proof
+        /// checks proof
+        /// continue
+        /// annoce bad guy
+        /// wait for all
         let evaluated = self
             .evaluated
             .remove(&last_node_id)
@@ -408,6 +442,7 @@ impl Node {
             .send(NodeCommands::OpenShare(evaluated, last_node_id.clone()))
             .expect("should succeed");
 
+        // now we wait for all shares :D
         loop {
             let event = match self.party_events.recv().await {
                 Some(e) => e,
