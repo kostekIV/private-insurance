@@ -50,6 +50,7 @@ Next complete a form for building an arithmetic circuit in UI and submit request
 ## How to run UI
 
 ```
+npm install
 npm start
 ```
 In `insur-front` folder.
