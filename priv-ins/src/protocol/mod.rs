@@ -210,9 +210,15 @@ pub async fn run_nodes(
         .zip(networks.into_iter())
         .zip(receivers.into_iter())
     {
-        let variables = (0..n_parties)
-            .map(|id| (id.to_string(), id as u64))
-            .collect();
+        let variables = variable_values
+            .iter()
+            .enumerate()
+            .fold(HashMap::new(), |mut l, (i, r)| {
+                for k in r.keys() {
+                    l.insert(k.clone(), i as u64);
+                }
+                l
+            });
         let our_variables = variable_values[id as usize].clone();
         let config = NodeConfig {
             id: id as u64,

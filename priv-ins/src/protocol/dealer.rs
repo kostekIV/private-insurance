@@ -77,9 +77,6 @@ impl TrustedDealer {
                             }
                         }
                         if let Some(sender) = self.senders.get(&node_id) {
-                            if cir_id == "2" {
-                                println!("sending");
-                            }
                             sender
                                 .send(DealerEvents::NodeSelfVariable(
                                     cir_id.clone(),
