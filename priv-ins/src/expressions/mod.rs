@@ -25,7 +25,8 @@ pub enum Expression<T: Num> {
         op: BinaryOp,
     },
     Variable {
-        name: String,
+        var: String,
+        owner: String
     },
 }
 
@@ -34,25 +35,29 @@ pub fn eval_expression<T: Num + Copy>(
     var_mapping: &HashMap<String, T>,
 ) -> Result<T, String> {
     match exp {
-        Expression::Number { number } => Ok(*number),
-        Expression::BinOp { left, right, op } => Ok(match op {
-            BinaryOp::Add => {
-                eval_expression(left, var_mapping)? + eval_expression(right, var_mapping)?
-            }
-            BinaryOp::Sub => {
-                eval_expression(left, var_mapping)? - eval_expression(right, var_mapping)?
-            }
-            BinaryOp::Mul => {
-                eval_expression(left, var_mapping)? * eval_expression(right, var_mapping)?
-            }
-            BinaryOp::Div => {
-                eval_expression(left, var_mapping)? / eval_expression(right, var_mapping)?
-            }
-        }),
-        Expression::Variable { name } => var_mapping
-            .get(name)
-            .ok_or(format!("Variable `{}` not found", name))
-            .map(|&x| x),
+        Expression::Number { number } => { Ok(*number) }
+        Expression::BinOp { left, right, op } => {
+            Ok(match op {
+                BinaryOp::Add => {
+                    eval_expression(left, var_mapping)? + eval_expression(right, var_mapping)?
+                }
+                BinaryOp::Sub => {
+                    eval_expression(left, var_mapping)? - eval_expression(right, var_mapping)?
+                }
+                BinaryOp::Mul => {
+                    eval_expression(left, var_mapping)? * eval_expression(right, var_mapping)?
+                }
+                BinaryOp::Div => {
+                    eval_expression(left, var_mapping)? / eval_expression(right, var_mapping)?
+                }
+            })
+        }
+        Expression::Variable { var, owner } => {
+            var_mapping
+                .get(var)
+                .ok_or(format!("Variable `{}` not found", var))
+                .map(|&x| x)
+        }
     }
 }
 
@@ -65,11 +70,9 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let x = Expression::<u64>::BinOp {
-            left: Box::new(Expression::Number { number: 10 }),
-            right: Box::new(Expression::Variable {
-                name: "x".to_string(),
-            }),
+        let x = Expression::<f32>::BinOp {
+            left: Box::new(Expression::Number { number: 10.2 }),
+            right: Box::new(Expression::Variable { var: "x".to_string(), owner: "0".to_string()}),
             op: Add,
         };
 
