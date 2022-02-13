@@ -2,6 +2,7 @@ use crate::crypto::shares::{sum_elems, Beaver, BeaverShare, Elem, Share, Shares}
 use crate::protocol::{sub_id, Alpha, CirId, NodeCommands, NodeEvents, NodeId, VarId};
 use async_recursion::async_recursion;
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 use std::ops::Sub;
 use std::process::id;
 
@@ -23,6 +24,19 @@ enum NodeState {
     WaitForShares(CirId, CirId, CirId, BeaverShare),
     HaveBeaver(CirId, Share, Share),
     HaveShares(CirId, CirId, CirId, BeaverShare),
+}
+
+impl Debug for NodeState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Proceed => { f.write_str("Proceed") }
+            WaitForVariable(var) => { f.write_str(format!("WaitForVariable(var: {})", var).as_str()) }
+            WaitForBeaver(_, _, _) => { f.write_str("WaitForBeaver") }
+            WaitForShares(_, _, _, _) => { f.write_str("WaitForShares") }
+            HaveBeaver(_, _, _) => { f.write_str("HaveBeaver") }
+            HaveShares(_, _, _, _) => { f.write_str("HaveShares") }
+        }
+    }
 }
 
 pub struct Node {
@@ -297,6 +311,10 @@ impl Node {
                 state => state,
             };
 
+            if self.id == 0 {
+                println!("2) NodeState: {:?}", state);
+            }
+
             if self.can_proceed(&state) {
                 log::debug!("{}", idx);
                 let evaluating = circuit_nodes.get(idx).expect("we control it");
@@ -315,6 +333,11 @@ impl Node {
                 s => s,
             };
 
+            if self.can_proceed(&state) {
+                idx += 1;
+                continue;
+            }
+
             let event = match self.party_events.recv().await {
                 Some(e) => e,
                 None => {
@@ -325,6 +348,9 @@ impl Node {
 
             match event {
                 NodeEvents::CirReady(c_id, s) => {
+                    if self.id == 0 {
+                        println!(" NodeEvents::CirReady {:?}", c_id);
+                    }
                     // evaluate node as sum of gotten shares
                     if self.fully_open.contains_key(&c_id) {
                         log::debug!("got twice opened value for {}", c_id);
@@ -333,6 +359,9 @@ impl Node {
                     self.fully_open.insert(c_id, s);
                 }
                 NodeEvents::SelfVariableReady(c_id, r, r_share) => {
+                    if self.id == 0 {
+                        println!(" NodeEvents::SelfVariableReady {:?}", c_id);
+                    }
                     if !self.variables.contains_key(&c_id) {
                         log::debug!("got foreign variable");
                         continue;
@@ -349,7 +378,10 @@ impl Node {
                         .insert(c_id, calculator.add_const(r_share, xr));
                 }
                 NodeEvents::NodeVariableReady(c_id, s) => {
-                    if !self.variable_salts.contains_key(&c_id) {
+                    if self.id == 0 {
+                        println!(" NodeEvents::NodeVariableReady {:?}", c_id);
+                    }
+                    if self.variable_salts.contains_key(&c_id) {
                         log::debug!("got twice value for {}", c_id);
                         continue;
                     }
@@ -358,6 +390,9 @@ impl Node {
                     self.combine_variable_if_full(c_id, &calculator);
                 }
                 NodeEvents::BeaverFor(c_id, beaver) => {
+                    if self.id == 0 {
+                        println!(" NodeEvents::BeaverFor {:?}", c_id);
+                    }
                     if !self.beavers.contains_key(&c_id) {
                         log::debug!("got twice value for {}", c_id);
                     }
@@ -365,7 +400,10 @@ impl Node {
                     self.beavers.insert(c_id, beaver);
                 }
                 NodeEvents::NodeVariableShareReady(c_id, s) => {
-                    if !self.variable_shares.contains_key(&c_id) {
+                    if self.id == 0 {
+                        println!(" NodeEvents::NodeVariableShareReady {:?}", c_id);
+                    }
+                    if self.variable_shares.contains_key(&c_id) {
                         log::debug!("got twice value for {}", c_id);
                         continue;
                     }
@@ -375,5 +413,36 @@ impl Node {
                 }
             }
         }
+
+        let last_node_id = circuit_nodes.last().expect("at least one should exist").cir_id();
+
+        let evaluated = self.evaluated.remove(&last_node_id).expect("we finished the evaluation");
+
+        self.party_commands.send(NodeCommands::OpenShare(evaluated, last_node_id.clone())).expect("should succeed");
+
+        loop {
+            let event = match self.party_events.recv().await {
+                Some(e) => e,
+                None => {
+                    log::debug!("party channel closed");
+                    return;
+                }
+            };
+            match event {
+                NodeEvents::CirReady(c, s) => {
+                    if c == last_node_id {
+                        let el = sum_elems(&s.into_iter().map(|(e, _)| e).collect());
+
+                        if self.id == 0 {
+                            println!("got {:?}", el);
+                        }
+                        return;
+                    }
+                }
+                // ignore
+                _ => {}
+            }
+        }
+
     }
 }

@@ -91,7 +91,7 @@ async fn run_nodes() {
         let variables = (0..n_parties)
             .map(|id| (id.to_string(), id as u64))
             .collect();
-        let our_variables = HashMap::from([(id.to_string(), (id * 10) as u64)]);
+        let our_variables = HashMap::from([(id.to_string(), (id * 10 + 1) as u64)]);
         let config = NodeConfig {
             id: id as u64,
             n_parties: n_parties as u8,
