@@ -205,7 +205,6 @@ pub fn decorate_expression(
                         Ok(DecoratedExpression::Mul(Box::new(x), Box::new(y), id))
                     }
                 },
-                _ => Err(format!("Only add and mul for now")),
             }
         }
         Expression::Variable { name } => {
