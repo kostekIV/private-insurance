@@ -6,9 +6,7 @@ type BExpression<T> = Box<Expression<T>>;
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum BinaryOp {
     Add,
-    Sub,
     Mul,
-    Div,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
