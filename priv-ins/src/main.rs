@@ -104,5 +104,7 @@ async fn run_nodes() {
         handles.push(tokio::spawn(run_node(config)));
     }
 
-    d.await;
+    for handle in handles {
+        handle.await.expect("node works :)");
+    }
 }
