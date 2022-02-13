@@ -4,17 +4,21 @@ mod expression;
 pub mod network;
 pub mod node;
 pub mod party;
+#[cfg(test)]
 mod test;
 
-use async_std::task;
-use ff::{Field, PrimeField};
 use std::collections::HashMap;
 
 use crate::crypto::shares::{BeaverShare, Commitment, CommitmentProof, Elem, Share, Shares};
 use crate::expressions::Expression;
 use crate::protocol::{
-    expression::decorate_expression, network::Network, node::Node, party::Party,
+    dealer::TrustedDealer,
+    expression::decorate_expression,
+    network::{setup_network, Network},
+    node::Node,
+    party::Party,
 };
+
 use tokio::sync::mpsc::{
     unbounded_channel, UnboundedReceiver as Receiver, UnboundedSender as Sender,
 };
@@ -105,8 +109,8 @@ pub struct Provider {
 }
 
 impl Provider {
-    pub fn from(var_to_node: HashMap<String, NodeId>) -> Self {
-        Self { id: 0, var_to_node }
+    pub fn new(id: u64, var_to_node: HashMap<String, NodeId>) -> Self {
+        Self { id, var_to_node }
     }
 
     pub fn next(&mut self) -> CirId {
@@ -130,7 +134,7 @@ pub struct NodeConfig<N: Network> {
     pub our_variables: HashMap<String, u64>,
 }
 
-pub async fn run_node<N: Network + 'static + Send>(config: NodeConfig<N>) {
+pub async fn run_node<N: Network + 'static + Send>(config: NodeConfig<N>) -> u64 {
     let NodeConfig {
         id,
         n_parties,
@@ -145,10 +149,7 @@ pub async fn run_node<N: Network + 'static + Send>(config: NodeConfig<N>) {
     let (node_events_tx, node_events_rx) = unbounded_channel();
     let (alpha_tx, alpha_rx) = unbounded_channel();
 
-    let mut provider = Provider {
-        id: 0,
-        var_to_node: variables,
-    };
+    let mut provider = Provider::new(0, variables);
 
     let decorated = decorate_expression(expression, &mut provider).expect("");
 
@@ -168,9 +169,7 @@ pub async fn run_node<N: Network + 'static + Send>(config: NodeConfig<N>) {
         n_parties,
     );
 
-    let node_task = async move {
-        node.run(decorated).await;
-    };
+    let node_task = async move { node.run(decorated).await };
     let party_task = async move {
         party.run().await;
     };
@@ -181,4 +180,55 @@ pub async fn run_node<N: Network + 'static + Send>(config: NodeConfig<N>) {
     let res = node_handle.await;
     println!("node {} finished with {:?}", id, res);
     tide::log::debug!("node {} finished with {:?}", id, res);
+    res.expect("Rune node failed")
+}
+
+pub async fn run_nodes(
+    n_parties: u32,
+    variable_values: Vec<HashMap<String, u64>>,
+    expression: Expression<u64>,
+) -> Vec<Result<u64, tokio::task::JoinError>> {
+    let networks = setup_network(n_parties);
+    let (senders, receivers): (Vec<_>, Vec<_>) =
+        (0..n_parties).map(|_| unbounded_channel()).unzip();
+    let (cmd_tx, cmd_rx) = unbounded_channel();
+
+    let dealer = TrustedDealer::new(
+        n_parties as u8,
+        senders
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| (i as u64, s))
+            .collect(),
+        cmd_rx,
+    );
+
+    let mut handles = vec![];
+    let _hansu = tokio::spawn(dealer.run());
+
+    for ((id, n), r) in (0..n_parties)
+        .zip(networks.into_iter())
+        .zip(receivers.into_iter())
+    {
+        let variables = (0..n_parties)
+            .map(|id| (id.to_string(), id as u64))
+            .collect();
+        let our_variables = variable_values[id as usize].clone();
+        let config = NodeConfig {
+            id: id as u64,
+            n_parties: n_parties as u8,
+            network: n,
+            dealer: (cmd_tx.clone(), r),
+            expression: expression.clone(),
+            variables,
+            our_variables,
+        };
+        handles.push(tokio::spawn(run_node(config)));
+    }
+
+    let mut results = vec![];
+    for handle in handles {
+        results.push(handle.await);
+    }
+    results
 }

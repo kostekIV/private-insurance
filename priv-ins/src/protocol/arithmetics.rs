@@ -93,7 +93,7 @@ pub fn verify_commitments(commitments: &Vec<CommitmentProof>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::shares::{self, Elems, Shares};
+    use crate::crypto::shares;
     use ff::Field;
 
     #[test]
