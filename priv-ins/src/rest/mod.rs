@@ -11,10 +11,9 @@ pub struct SuccessMsg {
 }
 
 pub(crate) async fn expression(mut req: Request<()>) -> tide::Result<Body> {
-    let form_data = req.body_string().await?;
+    let exp = req.body_json().await?;
 
     log!(Level::Debug, "got {:?}", exp);
-    log!(Level::Debug, "{:?}", eval_expression(&exp, &HashMap::new()));
 
     Body::from_json(&SuccessMsg {
         msg: String::from("Nice"),

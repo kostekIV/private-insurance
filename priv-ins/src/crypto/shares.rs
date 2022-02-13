@@ -1,6 +1,8 @@
 use crate::crypto::Fp;
-use ff::Field;
+use ff::{Field, PrimeField};
 use rand;
+use rand::Rng;
+use sha3::{Digest, Sha3_256};
 use std::ops::Sub;
 
 pub type Elem = Fp;
@@ -59,6 +61,23 @@ pub fn random_beaver(alpha: &Elems, n_parties: u8) -> Vec<BeaverShare> {
 
 pub fn sum_elems(elems: &Elems) -> Elem {
     elems.iter().fold(Elem::zero(), |a, &b| a + b)
+}
+
+pub fn compute_commitment(elem: &Elem, noise: &Vec<u8>) -> [u8; 32] {
+    hash(&[&elem.to_repr().0[..], noise].concat())
+}
+
+pub fn generate_commitment(elem: &Elem) -> ([u8; 32], Vec<u8>) {
+    let noise = random_noise();
+    (compute_commitment(elem, &noise), noise)
+}
+
+fn random_noise() -> Vec<u8> {
+    rand::thread_rng().gen::<[u8; 32]>().to_vec()
+}
+
+pub fn hash(x: &[u8]) -> [u8; 32] {
+    Sha3_256::digest(x).into()
 }
 
 #[cfg(test)]

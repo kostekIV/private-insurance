@@ -1,5 +1,9 @@
 use crate::{
-    crypto::shares::{BeaverShare, Elem, Share},
+    crypto::{
+        shares::{self, BeaverShare, Elem, Share},
+        Fp,
+    },
+    ff::Field,
     protocol::NodeId,
 };
 
@@ -17,18 +21,23 @@ impl Calculator {
     }
 
     /// Returns a sum of two shares [x+y]
-    pub fn add(&self, mac_1: Share, mac_2: Share) -> Share {
-        (mac_1.0 + mac_2.0, mac_1.1 + mac_2.1)
+    pub fn add(&self, share_1: Share, share_2: Share) -> Share {
+        (share_1.0 + share_2.0, share_1.1 + share_2.1)
     }
 
     /// Returns a substraction of two shares [x-y]
-    pub fn sub(&self, mac_1: Share, mac_2: Share) -> Share {
-        (mac_1.0 - mac_2.0, mac_1.1 - mac_2.1)
+    pub fn sub(&self, share_1: Share, share_2: Share) -> Share {
+        (share_1.0 - share_2.0, share_1.1 - share_2.1)
     }
 
     /// Returns shares [x-a] and [y-b] that need to be opened for multiplication
-    pub fn mul_prepare(&self, mac_1: Share, mac_2: Share, beaver: BeaverShare) -> (Share, Share) {
-        (self.sub(mac_1, beaver.0), self.sub(mac_2, beaver.1))
+    pub fn mul_prepare(
+        &self,
+        share_1: Share,
+        share_2: Share,
+        beaver: BeaverShare,
+    ) -> (Share, Share) {
+        (self.sub(share_1, beaver.0), self.sub(share_2, beaver.1))
     }
 
     /// Multiplies beaver share with opened [x-a] and [y-b]
@@ -42,17 +51,35 @@ impl Calculator {
     }
 
     /// Adds opened a element to share [x]
-    pub fn add_const(&self, mac: Share, share: Elem) -> Share {
+    pub fn add_const(&self, share: Share, constant: Elem) -> Share {
         (
-            if self.id == 0 { mac.0 + share } else { mac.0 },
-            self.alpha_share * share + mac.1,
+            if self.id == 0 {
+                share.0 + constant
+            } else {
+                share.0
+            },
+            self.alpha_share * constant + share.1,
         )
     }
 
     /// Multiplies share [x] by opened element a
-    pub fn mul_by_const(&self, mac: Share, share: Elem) -> Share {
-        (mac.0 * share, mac.1 * share)
+    pub fn mul_by_const(&self, share: Share, constant: Elem) -> Share {
+        (share.0 * constant, share.1 * constant)
     }
+
+    /// Generates element that we want to commit for partial opening d_i = a_i * x' - m(x)_i
+    pub fn generate_commitment_share(&self, opened: Elem, share: Share) -> Elem {
+        self.alpha_share * opened - share.1
+    }
+}
+
+fn verify_commitments(commitments: Vec<([u8; 32], Elem, Vec<u8>)>) -> bool {
+    for (hash, elem, noise) in commitments.iter() {
+        if *hash != shares::compute_commitment(elem, noise) {
+            return false;
+        }
+    }
+    shares::sum_elems(&commitments.iter().map(|c| c.1).collect()) == Elem::zero()
 }
 
 #[cfg(test)]

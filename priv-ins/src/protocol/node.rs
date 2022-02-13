@@ -428,6 +428,7 @@ impl Node {
                             )
                             .unwrap();
                             println!("got {:?}", n);
+                            println!("bytes {:?}", el.to_repr().0);
                         }
                         return;
                     }
