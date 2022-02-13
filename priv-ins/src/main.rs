@@ -38,7 +38,7 @@ struct VariableConfig {
     nodes: Vec<HashMap<String, u64>>,
 }
 
-#[tokio::main]
+#[async_std::main]
 async fn main() -> tide::Result<()> {
     tide::log::start();
     let mut app = tide::new();
