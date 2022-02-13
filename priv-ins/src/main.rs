@@ -14,6 +14,7 @@ mod expressions;
 mod protocol;
 mod rest;
 
+use crate::rest::expression;
 use crate::{
     expressions::{
         BinaryOp::{Add, Mul},
@@ -38,8 +39,17 @@ struct VariableConfig {
 }
 
 #[tokio::main]
-async fn main() {
-    run_nodes().await;
+async fn main() -> tide::Result<()> {
+    tide::log::start();
+    let mut app = tide::new();
+
+    app.at("/exp").post(expression);
+
+    app.with(get_cors());
+    app.listen("127.0.0.1:8080").await?;
+
+    Ok(())
+    // run_nodes().await;
 }
 
 async fn run_nodes() {
