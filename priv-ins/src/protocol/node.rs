@@ -359,37 +359,40 @@ impl Node {
     }
 
     /// check state of node and make transition if needed
-    fn state_transition(&self, state: NodeState) -> NodeState {
-        match state {
-            WaitForVariable(cir_id) => {
+    fn state_transition(&self, state: NodeState, expr: Option<&MidEvalExpression>) -> NodeState {
+        match (state, expr) {
+            (WaitForVariable(cir_id), _) => {
                 if self.evaluated.contains_key(&cir_id) {
                     Proceed
                 } else {
                     WaitForVariable(cir_id)
                 }
             }
-            WaitForBeaver(cir_id, s1, s2) => {
+            (WaitForBeaver(cir_id, s1, s2), _) => {
                 if self.beavers.contains_key(&cir_id) {
                     HaveBeaver(cir_id, s1, s2)
                 } else {
                     WaitForBeaver(cir_id, s1, s2)
                 }
             }
-            WaitForShares(c, e, f, beaver) => {
+            (WaitForShares(c, e, f, beaver), _) => {
                 if self.fully_open.contains_key(&e) && self.fully_open.contains_key(&f) {
                     HaveShares(c, e, f, beaver)
                 } else {
                     WaitForShares(c, e, f, beaver)
                 }
             }
-            WaitForCommitments(c1, c2) => {
+            (WaitForCommitments(c1, c2), _) => {
                 if self.commitments.contains_key(&c1) && self.commitments.contains_key(&c2) {
                     Proceed
                 } else {
                     WaitForCommitments(c1, c2)
                 }
             }
-            state => state,
+            (Proceed, Some(MidEvalExpression::Var(cid))) if !self.evaluated.contains_key(cid) => {
+                WaitForVariable(cid.clone())
+            }
+            (state, _) => state,
         }
     }
 
@@ -521,11 +524,10 @@ impl Node {
 
         loop {
             // everything evaluated
-            if idx == circuit_nodes.len() {
+            state = self.state_transition(state, circuit_nodes.get(idx));
+            if idx == circuit_nodes.len() && self.can_proceed(&state) {
                 break;
             }
-
-            state = self.state_transition(state);
 
             if self.id == 0 {
                 println!("NodeState: {:?}", state);
