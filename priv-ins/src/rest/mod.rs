@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::expressions::{eval_expression, Expression};
+use std::collections::HashMap;
 use tide::{Body, Request};
 
 use serde::{Deserialize, Serialize};
@@ -13,8 +13,8 @@ pub struct SuccessMsg {
 pub(crate) async fn expression(mut req: Request<()>) -> tide::Result<Body> {
     let form_data = req.body_string().await?;
 
-    log!(Level::Debug, "got {:?}", form_data);
-    //log!(Level::Debug, "{:?}", eval_expression(&exp, &HashMap::new()));
+    log!(Level::Debug, "got {:?}", exp);
+    log!(Level::Debug, "{:?}", eval_expression(&exp, &HashMap::new()));
 
     Body::from_json(&SuccessMsg {
         msg: String::from("Nice"),

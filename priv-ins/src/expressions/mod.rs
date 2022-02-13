@@ -1,6 +1,6 @@
-use num_traits::Float;
-use std::collections::HashMap;
+use num_traits::Num;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 
 type BExpression<T> = Box<Expression<T>>;
@@ -15,7 +15,7 @@ pub enum BinaryOp {
 
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub enum Expression<T: Float> {
+pub enum Expression<T: Num> {
     Number {
         number: T,
     },
@@ -25,35 +25,34 @@ pub enum Expression<T: Float> {
         op: BinaryOp,
     },
     Variable {
-        name: String
+        name: String,
     },
 }
 
-pub fn eval_expression<T: Float>(exp: &Expression<T>, var_mapping: &HashMap<String, T>) -> Result<T, String> {
+pub fn eval_expression<T: Num + Copy>(
+    exp: &Expression<T>,
+    var_mapping: &HashMap<String, T>,
+) -> Result<T, String> {
     match exp {
-        Expression::Number { number } => { Ok(*number) }
-        Expression::BinOp { left, right, op } => {
-            Ok(match op {
-                BinaryOp::Add => {
-                    eval_expression(left, var_mapping)? + eval_expression(right, var_mapping)?
-                }
-                BinaryOp::Sub => {
-                    eval_expression(left, var_mapping)? - eval_expression(right, var_mapping)?
-                }
-                BinaryOp::Mul => {
-                    eval_expression(left, var_mapping)? * eval_expression(right, var_mapping)?
-                }
-                BinaryOp::Div => {
-                    eval_expression(left, var_mapping)? / eval_expression(right, var_mapping)?
-                }
-            })
-        }
-        Expression::Variable { name } => {
-            var_mapping
-                .get(name)
-                .ok_or(format!("Variable `{}` not found", name))
-                .map(|&x| x)
-        }
+        Expression::Number { number } => Ok(*number),
+        Expression::BinOp { left, right, op } => Ok(match op {
+            BinaryOp::Add => {
+                eval_expression(left, var_mapping)? + eval_expression(right, var_mapping)?
+            }
+            BinaryOp::Sub => {
+                eval_expression(left, var_mapping)? - eval_expression(right, var_mapping)?
+            }
+            BinaryOp::Mul => {
+                eval_expression(left, var_mapping)? * eval_expression(right, var_mapping)?
+            }
+            BinaryOp::Div => {
+                eval_expression(left, var_mapping)? / eval_expression(right, var_mapping)?
+            }
+        }),
+        Expression::Variable { name } => var_mapping
+            .get(name)
+            .ok_or(format!("Variable `{}` not found", name))
+            .map(|&x| x),
     }
 }
 
@@ -62,18 +61,32 @@ mod tests {
     use std::collections::HashMap;
     use crate::expressions::BinaryOp::Add;
     use crate::expressions::{eval_expression, Expression};
+    use std::collections::HashMap;
 
     #[test]
     fn it_works() {
-        let x = Expression::<f32>::BinOp {
-            left: Box::new(Expression::Number { number: 10.2 }),
-            right: Box::new(Expression::Variable { name: "x".to_string()}),
+        let x = Expression::<u64>::BinOp {
+            left: Box::new(Expression::Number { number: 10 }),
+            right: Box::new(Expression::Variable {
+                name: "x".to_string(),
+            }),
             op: Add,
         };
 
-        assert_eq!(Ok(20.2), eval_expression(&x, &HashMap::from([(String::from("x"), 10.0)])));
-        assert_eq!(Ok(21.2), eval_expression(&x, &HashMap::from([(String::from("x"), 11.0)])));
-        assert_eq!(Ok(22.2), eval_expression(&x, &HashMap::from([(String::from("x"), 12.0)])));
-        assert_eq!(Err("Variable `x` not found".to_string()), eval_expression(&x, &HashMap::from([])));
+        assert_eq!(
+            Ok(20),
+            eval_expression(&x, &HashMap::from([(String::from("x"), 10)]))
+        );
+        assert_eq!(
+            Ok(21),
+            eval_expression(&x, &HashMap::from([(String::from("x"), 11)]))
+        );
+        assert_eq!(
+            Ok(22),
+            eval_expression(&x, &HashMap::from([(String::from("x"), 12)]))
+        );
+        assert_eq!(
+            Err("Variable `x` not found".to_string()),
+            eval_expression(&x, &HashMap::from([]))
     }
 }

@@ -35,74 +35,72 @@ function App() {
   };
 
   const getValue = (name: string) => {
-    let result = Object.entries(formData).filter(
-      ([key, _]) => {
-        if (key == name) {
-          return true;
-        } else {
-          return false;
-        }
-      }
-    );
+    let result = Object.entries(formData).filter(([key, _]) => {
+      return key === name;
+    });
     if (result.length === 0) {
       return;
     } else {
       return result[0][1] as string;
     }
-  }
+  };
 
   const renderExpression = (type: string, name: string) => {
     switch (type) {
       case "Number":
-        let num_name = name+"/number";
+        let num_name = name + "/number";
         return (
-          <input name={num_name}
+          <input
+            name={num_name}
             step="1"
             type="number"
             onChange={handleChange}
-            value={getValue(num_name) || '0'}
+            value={getValue(num_name) || "0"}
           />
         );
       case "Variable":
-        let var_name = name+"/variable";
+        let var_name = name + "/variable";
         return (
           <span>
-          <input name={var_name+"/var"}
-            onChange={handleChange}
-            value={getValue(var_name+"/var")}
-          /> <span> owned by </span> 
-           <input name={var_name+"/owner"}
-            step="1"
-            type="number"
-            min={0}
-            max={formData.amount_of_people - 1}
-            onChange={handleChange}
-            value={getValue(var_name+"/owner") || '0'}
-          />
+            <input
+              name={var_name + "/var"}
+              onChange={handleChange}
+              value={getValue(var_name + "/var")}
+            />{" "}
+            <span> owned by </span>
+            <input
+              name={var_name + "/owner"}
+              step="1"
+              type="number"
+              min={0}
+              max={formData.amount_of_people - 1}
+              onChange={handleChange}
+              value={getValue(var_name + "/owner") || "0"}
+            />
           </span>
         );
       case "Expression":
-        let left_name = name+"/left";
-        let right_name = name+"/right";
-        let op_name = name+"/op";
+        let left_name = name + "/left";
+        let right_name = name + "/right";
+        let op_name = name + "/op";
 
         return (
           <div>
             <select
               name={left_name}
               onChange={handleChange}
-              value={getValue(left_name) || 'Number'}
+              value={getValue(left_name) || "Number"}
             >
               <option value="Number">Number</option>
               <option value="Variable">Variable</option>
               <option value="Expression">Expression</option>
             </select>
-            {renderExpression(getValue(left_name) || "Number", name+"/left")}
+            {renderExpression(getValue(left_name) || "Number", name + "/left")}
             <br></br>
             <select
               name={op_name}
               onChange={handleChange}
-              value={getValue(op_name) || 'Sum'}
+              value={getValue(op_name) || "Sum"}
             >
               <option value="Sum">Sum</option>
               <option value="Mul">Mul</option>
@@ -111,13 +109,16 @@ function App() {
             <select
               name={right_name}
               onChange={handleChange}
-              value={getValue(right_name) || 'Number'}
+              value={getValue(right_name) || "Number"}
             >
               <option value="Number">Number</option>
               <option value="Variable">Variable</option>
               <option value="Expression">Expression</option>
             </select>
-            {renderExpression(getValue(right_name) || "Number", name+"/right")}
+            {renderExpression(
+              getValue(right_name) || "Number",
+              name + "/right"
+            )}
           </div>
         );
     }
@@ -162,10 +163,11 @@ function App() {
         <ul>
           {Object.entries(formData).map(
             ([name, value]) =>
-              (name !== "expression") &&
-              <li key={name}>
+              name !== "expression" && (
+                <li key={name}>
                   <strong>{name}</strong>: {value}
                 </li>
+              )
           )}
         </ul>
       </div>
