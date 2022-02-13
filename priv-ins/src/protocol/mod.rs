@@ -175,8 +175,8 @@ pub async fn run_node<N: Network + 'static + Send>(config: NodeConfig<N>) {
         party.run().await;
     };
 
-    let node_handle = task::spawn(node_task);
-    task::spawn(party_task);
+    let node_handle = tokio::spawn(node_task);
+    tokio::spawn(party_task);
 
     let res = node_handle.await;
     println!("node {} finished with {:?}", id, res);

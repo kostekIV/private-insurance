@@ -90,7 +90,7 @@ async fn run_nodes(n_parties: u32, expression: Expression<u64>) {
     );
 
     let mut handles = vec![];
-    let d = task::spawn(dealer.run());
+    let _hansu = tokio::spawn(dealer.run());
 
     let variable_config: VariableConfig = serde_json::from_str(
         &fs::read_to_string("variables_config.json")
@@ -116,11 +116,11 @@ async fn run_nodes(n_parties: u32, expression: Expression<u64>) {
             variables,
             our_variables,
         };
-        handles.push(task::spawn(run_node(config)));
+        handles.push(tokio::spawn(run_node(config)));
     }
 
     for handle in handles {
-        handle.await;
+        handle.await.expect("");
     }
 }
 

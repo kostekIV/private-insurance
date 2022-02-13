@@ -456,6 +456,9 @@ impl Node {
 
     async fn wait_for_others(&mut self, mut cir_ids: HashSet<CirId>, calculator: &Calculator) {
         while !cir_ids.is_empty() {
+            if self.id == 0 {
+                println!("xd {:?}", cir_ids);
+            }
             for id in self.valid_proofs.iter() {
                 cir_ids.remove(id);
             }
@@ -665,10 +668,10 @@ impl Node {
             println!("loop2 {:?}", last_id);
         }
         // check proofs
-        let to_check = self.check_proofs();
+        self.check_proofs();
 
         // wait for all nodes to conclude their checks
-        self.wait_for_others(to_check, &calculator).await;
+        self.wait_for_others([last_id.clone()].into_iter().collect(), &calculator).await;
 
         // yay
         if self.id == 0 {
