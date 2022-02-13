@@ -62,22 +62,11 @@ function App() {
       case "Variable":
         let var_name = name + "/variable";
         return (
-          <span>
           <input name={var_name+"/var"}
             onChange={handleChange}
             value={getValue(var_name+"/var")}
             placeholder="Enter variable name"
-          /> <span> owned by </span> 
-           <input name={var_name+"/owner"}
-            step="1"
-            type="number"
-            min={0}
-            max={formData.amount_of_people - 1}
-            onChange={handleChange}
-            value={getValue(var_name+"/owner")}
-            placeholder="Enter owner"
           />
-          </span>
         );
       case "Expression":
         let left_name = name + "/left";
@@ -106,8 +95,6 @@ function App() {
               <option value="Unknown">--Choose Operator--</option>
               <option value="Sum">Sum</option>
               <option value="Mul">Mul</option>
-              <option value="Div">Div</option>
-              <option value="Sub">Sub</option>
             </select>
             <br></br>
             <select
@@ -141,7 +128,8 @@ function App() {
               name="amount_of_people"
               min={0}
               onChange={handleChange}
-              value={formData.amount_of_people || "0"}
+              value={formData.amount_of_people}
+              placeholder="Enter amount of people"
             />
           </label>
         </fieldset>

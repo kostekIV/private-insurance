@@ -24,7 +24,7 @@ pub(crate) fn translate_string_to_map(input: String) -> HashMap<String, String> 
         let subpart = part.split(":").collect::<Vec<_>>();
         let name = subpart[0].split("\"").collect::<Vec<_>>()[1].to_string();
         let value = subpart[1].split("\"").collect::<Vec<_>>()[1].to_string();
-        //let name = String::from(name.strip_suffix("\\\"").unwrap());
+
         log!(Level::Debug, "Name {:?}", name);
         log!(Level::Debug, "Value {:?}", value);
 
@@ -37,7 +37,6 @@ pub(crate) fn translate_string_to_map(input: String) -> HashMap<String, String> 
 pub(crate) fn get_expression<T>(
     map: HashMap<String, String>,
     key: String,
-    pairing: &mut HashMap<String, String>,
 ) -> Expression<T>
 where
     T: Num + std::str::FromStr,
@@ -51,8 +50,6 @@ where
         };
     } else if map[&key] == "Variable" {
         let name = map[&(key.clone() + "/variable/var")].clone();
-        let owner = map[&(key + "/variable/owner")].clone();
-        pairing.insert(name.clone(), owner);
 
         return Expression::Variable { name: name };
     } else {
@@ -67,8 +64,8 @@ where
         };
 
         return Expression::BinOp {
-            left: Box::new(get_expression(map.clone(), key.clone() + "/left", pairing)),
-            right: Box::new(get_expression(map, key + "/right", pairing)),
+            left: Box::new(get_expression(map.clone(), key.clone() + "/left")),
+            right: Box::new(get_expression(map, key + "/right")),
             op: op,
         };
     }
@@ -78,13 +75,12 @@ pub(crate) async fn expression(mut req: Request<()>) -> tide::Result<Body> {
     let form_data = req.body_string().await?;
     log!(Level::Debug, "got {:?}", form_data);
     let map = translate_string_to_map(form_data);
-    let mut pairing = HashMap::new();
     let n_parties: u32 = map
         .get(&String::from("amount_of_people"))
         .unwrap()
         .parse()
         .unwrap();
-    let expr = get_expression::<u64>(map, "expression".to_string(), &mut pairing);
+    let expr = get_expression::<u64>(map, "expression".to_string());
 
     let variable_config: VariableConfig = serde_json::from_str(
         &fs::read_to_string("variables_config.json")
