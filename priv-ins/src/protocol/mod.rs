@@ -6,6 +6,8 @@ pub mod node;
 pub mod party;
 mod test;
 
+use async_std::task;
+use ff::{Field, PrimeField};
 use std::collections::HashMap;
 
 use crate::crypto::shares::{BeaverShare, Commitment, CommitmentProof, Elem, Share, Shares};
@@ -173,9 +175,10 @@ pub async fn run_node<N: Network + 'static + Send>(config: NodeConfig<N>) {
         party.run().await;
     };
 
-    let node_handle = tokio::spawn(node_task);
-    tokio::spawn(party_task);
+    let node_handle = task::spawn(node_task);
+    task::spawn(party_task);
 
-    node_handle.await.expect("");
-    log::debug!("node {} finished", id);
+    let res = node_handle.await;
+    println!("node {} finished with {:?}", id, res);
+    tide::log::debug!("node {} finished with {:?}", id, res);
 }
