@@ -1,19 +1,20 @@
-use crate::expressions::{eval_expression, BinaryOp, Expression};
-use crate::protocol::dealer::TrustedDealer;
-use crate::protocol::network::setup_network;
-use crate::protocol::{run_node, NodeConfig};
-use crate::VariableConfig;
-use async_std::task;
+use crate::expressions::{BinaryOp, Expression};
+use crate::protocol::run_nodes;
 use num_traits::Num;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs};
 use tide::log::{log, Level};
 use tide::{Body, Request};
-use tokio::sync::mpsc::unbounded_channel;
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct SuccessMsg {
     msg: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct VariableConfig {
+    nodes: Vec<HashMap<String, u64>>,
 }
 
 pub(crate) fn translate_string_to_map(input: String) -> HashMap<String, String> {
@@ -73,57 +74,6 @@ where
     }
 }
 
-async fn run_nodes(n_parties: u32, expression: Expression<u64>) {
-    let networks = setup_network(n_parties);
-    let (senders, receivers): (Vec<_>, Vec<_>) =
-        (0..n_parties).map(|_| unbounded_channel()).unzip();
-    let (cmd_tx, cmd_rx) = unbounded_channel();
-
-    let dealer = TrustedDealer::new(
-        n_parties as u8,
-        senders
-            .into_iter()
-            .enumerate()
-            .map(|(i, s)| (i as u64, s))
-            .collect(),
-        cmd_rx,
-    );
-
-    let mut handles = vec![];
-    let _hansu = tokio::spawn(dealer.run());
-
-    let variable_config: VariableConfig = serde_json::from_str(
-        &fs::read_to_string("variables_config.json")
-            .expect("Unable to read config file containing peer addresses"),
-    )
-    .expect("JSON was not well-formatted");
-    println!("{:?}", variable_config);
-
-    for ((id, n), r) in (0..n_parties)
-        .zip(networks.into_iter())
-        .zip(receivers.into_iter())
-    {
-        let variables = (0..n_parties)
-            .map(|id| (id.to_string(), id as u64))
-            .collect();
-        let our_variables = variable_config.nodes[id as usize].clone();
-        let config = NodeConfig {
-            id: id as u64,
-            n_parties: n_parties as u8,
-            network: n,
-            dealer: (cmd_tx.clone(), r),
-            expression: expression.clone(),
-            variables,
-            our_variables,
-        };
-        handles.push(tokio::spawn(run_node(config)));
-    }
-
-    for handle in handles {
-        handle.await.expect("");
-    }
-}
-
 pub(crate) async fn expression(mut req: Request<()>) -> tide::Result<Body> {
     let form_data = req.body_string().await?;
     log!(Level::Debug, "got {:?}", form_data);
@@ -135,9 +85,15 @@ pub(crate) async fn expression(mut req: Request<()>) -> tide::Result<Body> {
         .parse()
         .unwrap();
     let expr = get_expression::<u64>(map, "expression".to_string(), &mut pairing);
-    run_nodes(n_parties, expr).await;
 
-    //log!(Level::Debug, "{:?}", eval_expression(&exp, &HashMap::new()));
+    let variable_config: VariableConfig = serde_json::from_str(
+        &fs::read_to_string("variables_config.json")
+            .expect("Unable to read config file containing peer addresses"),
+    )
+    .expect("JSON was not well-formatted");
+    println!("{:?}", variable_config);
+
+    run_nodes(n_parties, variable_config.nodes, expr).await;
 
     Body::from_json(&SuccessMsg {
         msg: String::from("Nice"),
