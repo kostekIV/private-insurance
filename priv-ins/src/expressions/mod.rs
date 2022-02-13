@@ -24,8 +24,7 @@ pub enum Expression<T: Num> {
         op: BinaryOp,
     },
     Variable {
-        var: String,
-        owner: String
+        name: String
     },
 }
 
@@ -51,10 +50,10 @@ pub fn eval_expression<T: Num + Copy>(
                 }
             })
         }
-        Expression::Variable { var, owner } => {
+        Expression::Variable { name } => {
             var_mapping
-                .get(var)
-                .ok_or(format!("Variable `{}` not found", var))
+                .get(name)
+                .ok_or(format!("Variable `{}` not found", name))
                 .map(|&x| x)
         }
     }
@@ -64,27 +63,26 @@ pub fn eval_expression<T: Num + Copy>(
 mod tests {
     use crate::expressions::BinaryOp::Add;
     use crate::expressions::{eval_expression, Expression};
-    use std::collections::HashMap;
 
     #[test]
     fn it_works() {
         let x = Expression::<f32>::BinOp {
             left: Box::new(Expression::Number { number: 10.2 }),
-            right: Box::new(Expression::Variable { var: "x".to_string(), owner: "0".to_string()}),
+            right: Box::new(Expression::Variable { name: "x".to_string()}),
             op: Add,
         };
 
         assert_eq!(
             Ok(20),
-            eval_expression(&x, &HashMap::from([(String::from("x"), 10)]))
+            eval_expression(&x, &HashMap::from([(String::from("x"), 10 as f32)]))
         );
         assert_eq!(
             Ok(21),
-            eval_expression(&x, &HashMap::from([(String::from("x"), 11)]))
+            eval_expression(&x, &HashMap::from([(String::from("x"), 11 as f32)]))
         );
         assert_eq!(
             Ok(22),
-            eval_expression(&x, &HashMap::from([(String::from("x"), 12)]))
+            eval_expression(&x, &HashMap::from([(String::from("x"), 12 as f32)]))
         );
         assert_eq!(
             Err("Variable `x` not found".to_string()),

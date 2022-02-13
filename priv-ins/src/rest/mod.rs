@@ -29,7 +29,7 @@ pub(crate) fn translate_string_to_map(input: String) -> HashMap<String, String> 
     return result;
 }
 
-pub(crate) fn get_expression<T>(map: HashMap<String, String>, key: String) -> Expression<T> 
+pub(crate) fn get_expression<T>(map: HashMap<String, String>, key: String, pairing: &mut HashMap<String, String>) -> Expression<T> 
 where
     T: Float + std::str::FromStr,
     T::Err: std::fmt::Debug
@@ -41,9 +41,12 @@ where
             number: map[&(key + "/number")].parse::<T>().unwrap()
         }
     } else if map[&key] == "Variable" {
+        let name = map[&(key.clone() + "/variable/var")].clone();
+        let owner =  map[&(key + "/variable/owner")].clone();
+        pairing.insert(name.clone(), owner);
+
         return Expression::Variable {
-            var: map[&(key.clone() + "/variable/var")].clone(),
-            owner: map[&(key + "/variable/owner")].clone()
+            name: name,
         }
     } else {
         let op = if map[&(key.clone() + "/op")] == "Add" {
@@ -57,8 +60,8 @@ where
         };
 
         return Expression::BinOp {
-            left: Box::new(get_expression(map.clone(), key.clone()+"/left")),
-            right: Box::new(get_expression(map, key+"/right")),
+            left: Box::new(get_expression(map.clone(), key.clone()+"/left", pairing)),
+            right: Box::new(get_expression(map, key+"/right", pairing)),
             op: op,
         }
     }
@@ -68,8 +71,8 @@ pub(crate) async fn expression(mut req: Request<()>) -> tide::Result<Body> {
     let form_data = req.body_string().await?;
     log!(Level::Debug, "got {:?}", form_data);
     let map = translate_string_to_map(form_data);
-    let expr = get_expression::<f32>(map, "expression".to_string());
-    log!(Level::Debug, "Value {:?}", expr);
+    let mut pairing = HashMap::new();
+    let expr = get_expression::<f32>(map, "expression".to_string(), &mut pairing);
     //log!(Level::Debug, "{:?}", eval_expression(&exp, &HashMap::new()));
 
     Body::from_json(&SuccessMsg {
