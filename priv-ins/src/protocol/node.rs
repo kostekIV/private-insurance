@@ -1,37 +1,36 @@
-use crate::crypto::shares::{sum_elems, Beaver, BeaverShare, Elem, Share, Shares};
+use crate::crypto::shares::{
+    sum_elems, BeaverShare, Commitment, CommitmentProof, Elem, Share, Shares,
+};
 use crate::ff::PrimeField;
-use crate::protocol::{sub_id, Alpha, CirId, NodeCommands, NodeEvents, NodeId, VarId};
-use async_recursion::async_recursion;
-use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
-use std::ops::Sub;
-use std::process::id;
+use std::collections::HashSet;
+use std::{collections::HashMap, fmt::Debug, ops::Sub};
 
-use crate::protocol::arithmetics::Calculator;
-use crate::protocol::expression::{DecoratedExpression, MidEvalExpression};
-use crate::protocol::node::NodeState::{
-    HaveBeaver, HaveShares, Proceed, WaitForBeaver, WaitForShares, WaitForVariable,
+use crate::protocol::arithmetics::verify_commitments;
+use crate::protocol::{
+    arithmetics::Calculator,
+    expression::{DecoratedExpression, MidEvalExpression},
+    node::NodeState::{
+        HaveBeaver, HaveShares, Proceed, WaitForBeaver, WaitForCommitments, WaitForShares,
+        WaitForVariable,
+    },
+    sub_id, Alpha, CirId, NodeCommands, NodeEvents, NodeId,
 };
-use futures::prelude::*;
-use tokio::select;
-use tokio::sync::mpsc::{
-    unbounded_channel, UnboundedReceiver as Receiver, UnboundedSender as Sender,
-};
+use tokio::sync::mpsc::{UnboundedReceiver as Receiver, UnboundedSender as Sender};
 
 #[derive(Debug)]
 /// Internal state of node with following transitions:
-/// Proceed -> WaitForVariable
-/// WaitForVariable -> Proceed
-/// Proceed -> WaitForBeaver
-/// WaitForBeaver -> HaveBeaver
+/// Proceed -> WaitForVariable | WaitForBeaver | Proceed
+/// WaitForVariable -> Proceed | WaitForVariable
+/// WaitForBeaver -> HaveBeaver | WaitForBeaver
 /// HaveBeaver -> WaitForShares
-/// WaitForShares -> HaveShares
-/// HaveShares -> Proceed
+/// WaitForShares -> HaveShares | WaitForShare
+/// HaveShares -> WaitForCommitments
+/// WaitForCommitments -> Proceed | WaitForCommitments
 ///
 /// In particular following path represents multiplication phases.
-/// WaitForBeaver -> HaveBeaver -> WaitForShares -> HaveShares
+/// WaitForBeaver -> HaveBeaver -> WaitForShares -> HaveShares -> WaitForCommitments
 enum NodeState {
-    /// we can procceed with evaluating
+    /// we can proceed with evaluating
     Proceed,
     /// waiting for shares of variable in the cir_id
     WaitForVariable(CirId),
@@ -43,6 +42,8 @@ enum NodeState {
     HaveBeaver(CirId, Share, Share),
     /// have all shares of (x - e) and (y - f) used in mul
     HaveShares(CirId, CirId, CirId, BeaverShare),
+    /// wait for all commitments for e and f
+    WaitForCommitments(CirId, CirId),
 }
 
 pub struct Node {
@@ -56,6 +57,12 @@ pub struct Node {
     beavers: HashMap<CirId, BeaverShare>,
     variable_shares: HashMap<CirId, Share>,
     variable_salts: HashMap<CirId, Elem>,
+    my_proofs: HashMap<CirId, CommitmentProof>,
+    proofs: HashMap<CirId, Vec<(NodeId, CommitmentProof)>>,
+    commitments: HashMap<CirId, Vec<(NodeId, Commitment)>>,
+    valid_proofs: HashSet<CirId>,
+    invalid_proofs: HashSet<CirId>,
+    original_shares: HashMap<CirId, Share>,
 }
 
 impl Node {
@@ -77,6 +84,12 @@ impl Node {
             beavers: HashMap::new(),
             variable_shares: HashMap::new(),
             variable_salts: HashMap::new(),
+            my_proofs: HashMap::new(),
+            commitments: HashMap::new(),
+            proofs: HashMap::new(),
+            valid_proofs: HashSet::new(),
+            invalid_proofs: HashSet::new(),
+            original_shares: HashMap::new(),
         }
     }
     /// checks if we have both x - r and [r] for variable under `var_node` if so put x - r + [r] under
@@ -114,18 +127,8 @@ impl Node {
 
     fn can_proceed(&self, state: &NodeState) -> bool {
         match state {
-            Proceed => {
-                if self.id == 0 {
-                    println!("can_proceed true");
-                };
-                true
-            }
-            _ => {
-                if self.id == 0 {
-                    println!("can_proceed false");
-                };
-                false
-            }
+            Proceed => true,
+            _ => false,
         }
     }
 
@@ -190,12 +193,93 @@ impl Node {
                     return WaitForVariable(cir_id.to_string());
                 }
             }
-            _ => {}
         }
 
         Proceed
     }
 
+    fn handle_event(&mut self, event: NodeEvents, calculator: &Calculator) {
+        if self.id == 0 {
+            println!("NodeEvents::{:?}", event);
+        }
+
+        match event {
+            NodeEvents::CirReady(c_id, s) => {
+                // evaluate node as sum of gotten shares
+                if self.fully_open.contains_key(&c_id) {
+                    log::debug!("got twice opened value for {}", c_id);
+                }
+
+                self.fully_open.insert(c_id, s);
+            }
+            NodeEvents::SelfVariableReady(c_id, r, r_share) => {
+                if !self.variables.contains_key(&c_id) {
+                    log::debug!("got foreign variable");
+                    return;
+                }
+                let x = self.variables.get(&c_id).expect("checked");
+
+                let xr = x.sub(r);
+                // send to everyone x-r
+                self.party_commands
+                    .send(NodeCommands::OpenSelfShare(xr, c_id.clone()))
+                    .expect("send should succeed");
+                // evaluate our variable as (x-r) + r_share
+                self.evaluated
+                    .insert(c_id, calculator.add_const(r_share, xr));
+            }
+            NodeEvents::NodeVariableReady(c_id, s) => {
+                if self.variable_salts.contains_key(&c_id) {
+                    log::debug!("got twice value for {}", c_id);
+                    return;
+                }
+
+                self.variable_salts.insert(c_id.clone(), s);
+                self.combine_variable_if_full(c_id, &calculator);
+            }
+            NodeEvents::BeaverFor(c_id, beaver) => {
+                if self.beavers.contains_key(&c_id) {
+                    log::debug!("got twice value for {}", c_id);
+                    return;
+                }
+
+                self.beavers.insert(c_id, beaver);
+            }
+            NodeEvents::NodeVariableShareReady(c_id, s) => {
+                if self.variable_shares.contains_key(&c_id) {
+                    log::debug!("got twice value for {}", c_id);
+                    return;
+                }
+
+                self.variable_shares.insert(c_id.clone(), s);
+                self.combine_variable_if_full(c_id, &calculator);
+            }
+            NodeEvents::CommitmentsFor(cir_id, commitments) => {
+                if self.commitments.contains_key(&cir_id) {
+                    log::debug!("got twice commitments for {}", cir_id);
+                    return;
+                }
+
+                self.commitments.insert(cir_id, commitments);
+            }
+            NodeEvents::ProofsFor(cir_id, proofs) => {
+                if self.proofs.contains_key(&cir_id) {
+                    log::debug!("got twice proofs for {}", cir_id);
+                    return;
+                }
+
+                self.proofs.insert(cir_id, proofs);
+            }
+            NodeEvents::ProofValid(cir_id) => {
+                self.valid_proofs.insert(cir_id);
+            }
+            NodeEvents::ProofInvalid(cir_id) => {
+                self.invalid_proofs.insert(cir_id);
+            }
+        }
+    }
+
+    /// we got beaver lets start evaluating mul node
     async fn handle_beaver(
         &mut self,
         calculator: &Calculator,
@@ -214,6 +298,9 @@ impl Node {
         let e_id = sub_id(&cir_id, &"e".to_string());
         let f_id = sub_id(&cir_id, &"f".to_string());
 
+        self.original_shares.insert(e_id.clone(), e.clone());
+        self.original_shares.insert(f_id.clone(), f.clone());
+
         self.party_commands
             .send(NodeCommands::OpenShare(e, e_id.to_string()))
             .expect("Send should succeed");
@@ -225,6 +312,7 @@ impl Node {
         WaitForShares(cir_id, e_id, f_id, beaver)
     }
 
+    /// we got all shares for mul nodes (of (x - e) and (y - f)
     fn handle_shares(
         &mut self,
         calculator: &Calculator,
@@ -239,14 +327,173 @@ impl Node {
         let e_elem = sum_elems(&e_shares.into_iter().map(|(e, _)| e).collect());
         let f_elem = sum_elems(&f_shares.into_iter().map(|(e, _)| e).collect());
 
+        let e_x = calculator.generate_commitment_share(
+            e_elem.clone(),
+            self.original_shares.remove(&e_id).expect("checked"),
+        );
+        let f_x = calculator.generate_commitment_share(
+            f_elem.clone(),
+            self.original_shares.remove(&f_id).expect("checked"),
+        );
+
+        let (e_hash, e_salt) = Calculator::generate_commitment(&e_x);
+        let (f_hash, f_salt) = Calculator::generate_commitment(&f_x);
+
+        let e_proof = (e_hash, e_x.clone(), e_salt);
+        let f_proof = (f_hash, f_x.clone(), f_salt);
+
+        self.my_proofs.insert(e_id.clone(), e_proof);
+        self.my_proofs.insert(f_id.clone(), f_proof);
+
+        self.party_commands
+            .send(NodeCommands::CommitmentFor(e_id.clone(), e_hash))
+            .expect("send should succeed");
+        self.party_commands
+            .send(NodeCommands::CommitmentFor(f_id.clone(), f_hash))
+            .expect("send should succeed");
+
         let v = calculator.mul(beaver, e_elem, f_elem);
         self.evaluated.insert(cir_id, v);
 
-        Proceed
+        WaitForCommitments(e_id, f_id)
     }
 
-    pub async fn run(mut self, exp: DecoratedExpression) {
-        self.party_commands.send(NodeCommands::NeedAlpha);
+    /// check state of node and make transition if needed
+    fn state_transition(&self, state: NodeState) -> NodeState {
+        match state {
+            WaitForVariable(cir_id) => {
+                if self.evaluated.contains_key(&cir_id) {
+                    Proceed
+                } else {
+                    WaitForVariable(cir_id)
+                }
+            }
+            WaitForBeaver(cir_id, s1, s2) => {
+                if self.beavers.contains_key(&cir_id) {
+                    HaveBeaver(cir_id, s1, s2)
+                } else {
+                    WaitForBeaver(cir_id, s1, s2)
+                }
+            }
+            WaitForShares(c, e, f, beaver) => {
+                if self.fully_open.contains_key(&e) && self.fully_open.contains_key(&f) {
+                    HaveShares(c, e, f, beaver)
+                } else {
+                    WaitForShares(c, e, f, beaver)
+                }
+            }
+            WaitForCommitments(c1, c2) => {
+                if self.commitments.contains_key(&c1) && self.commitments.contains_key(&c2) {
+                    Proceed
+                } else {
+                    WaitForCommitments(c1, c2)
+                }
+            }
+            state => state,
+        }
+    }
+
+    async fn wait_for_proofs(&mut self, calculator: &Calculator) {
+        let mut need_proofs_for = self.my_proofs.keys().cloned().collect::<HashSet<_>>();
+
+        for cir_id in self.proofs.keys() {
+            need_proofs_for.remove(cir_id);
+        }
+
+        while !need_proofs_for.is_empty() {
+            let event = match self.party_events.recv().await {
+                Some(e) => e,
+                None => {
+                    log::debug!("party channel closed");
+                    return;
+                }
+            };
+            self.handle_event(event, &calculator);
+
+            for cir_id in self.proofs.keys() {
+                need_proofs_for.remove(cir_id);
+            }
+        }
+    }
+
+    fn check_proofs(&mut self) -> HashSet<CirId> {
+        let cir_ids = self.proofs.keys().cloned().collect::<Vec<_>>();
+        for cir_id in cir_ids.iter() {
+            let mut proofs = self.proofs.remove(cir_id).expect("checked");
+
+            let mut commits = self.commitments.remove(cir_id).expect("checked");
+
+            proofs.sort_by(|a, b| a.0.cmp(&b.0));
+            commits.sort_by(|a, b| a.0.cmp(&b.0));
+
+            for ((a_id, proof), (b_id, comm)) in proofs.iter().zip(commits) {
+                if *a_id != b_id {
+                    panic!("this should be checked in party probably");
+                }
+
+                if proof.0 != comm {
+                    self.party_commands
+                        .send(NodeCommands::ProofInvalid(cir_id.clone()))
+                        .expect("Send should succeed");
+                    panic!("Abort");
+                }
+            }
+
+            if !verify_commitments(&proofs.into_iter().map(|(_, c)| c).collect()) {
+                self.party_commands
+                    .send(NodeCommands::ProofInvalid(cir_id.clone()))
+                    .expect("Send should succeed");
+                panic!("Abort");
+            }
+
+            self.party_commands
+                .send(NodeCommands::ProofVerified(cir_id.clone()))
+                .expect("Send should succeed");
+        }
+
+        cir_ids.into_iter().collect()
+    }
+
+    async fn wait_for_others(&mut self, mut cir_ids: HashSet<CirId>, calculator: &Calculator) {
+        while !cir_ids.is_empty() {
+            for id in self.valid_proofs.iter() {
+                cir_ids.remove(id);
+            }
+            if !self.invalid_proofs.is_empty() {
+                panic!("Abort");
+            }
+            if cir_ids.is_empty() {
+                return;
+            }
+            let event = match self.party_events.recv().await {
+                Some(e) => e,
+                None => {
+                    log::debug!("party channel closed");
+                    return;
+                }
+            };
+            self.handle_event(event, &calculator);
+        }
+    }
+
+    async fn try_proceed_with_mul(
+        &mut self,
+        state: NodeState,
+        calculator: &Calculator,
+    ) -> NodeState {
+        match state {
+            HaveBeaver(cir_id, ev1, ev2) => self.handle_beaver(&calculator, cir_id, ev1, ev2).await,
+            HaveShares(cir_id, e_id, f_id, beaver) => {
+                self.handle_shares(&calculator, cir_id, e_id, f_id, beaver)
+            }
+            s => s,
+        }
+    }
+
+    pub async fn run(mut self, exp: DecoratedExpression) -> u64 {
+        self.party_commands
+            .send(NodeCommands::NeedAlpha)
+            .expect("Send should succeed");
 
         // announce need for beaver for this circuit nodes
         for mul_id in exp.mul_ids() {
@@ -255,7 +502,7 @@ impl Node {
                 .expect("send should succeed");
         }
 
-        // announce to delear our variable
+        // announce to dealer our variable
         for (var_id, _) in exp.self_var_ids(Some(self.id)) {
             self.party_commands
                 .send(NodeCommands::OpenSelfInput(var_id))
@@ -275,53 +522,23 @@ impl Node {
                 break;
             }
 
-            state = match state {
-                WaitForVariable(cir_id) => {
-                    if self.evaluated.contains_key(&cir_id) {
-                        Proceed
-                    } else {
-                        WaitForVariable(cir_id)
-                    }
-                }
-                WaitForBeaver(cir_id, s1, s2) => {
-                    if self.beavers.contains_key(&cir_id) {
-                        HaveBeaver(cir_id, s1, s2)
-                    } else {
-                        WaitForBeaver(cir_id, s1, s2)
-                    }
-                }
-                WaitForShares(c, e, f, beaver) => {
-                    if self.fully_open.contains_key(&e) && self.fully_open.contains_key(&f) {
-                        HaveShares(c, e, f, beaver)
-                    } else {
-                        WaitForShares(c, e, f, beaver)
-                    }
-                }
-                state => state,
-            };
+            state = self.state_transition(state);
 
             if self.id == 0 {
                 println!("NodeState: {:?}", state);
             }
 
             if self.can_proceed(&state) {
-                log::debug!("{}", idx);
                 let evaluating = circuit_nodes.get(idx).expect("we control it");
                 state = self.try_proceed(&calculator, evaluating);
                 idx += 1;
                 continue;
             }
 
-            state = match state {
-                HaveBeaver(cir_id, ev1, ev2) => {
-                    self.handle_beaver(&calculator, cir_id, ev1, ev2).await
-                }
-                HaveShares(cir_id, e_id, f_id, beaver) => {
-                    self.handle_shares(&calculator, cir_id, e_id, f_id, beaver)
-                }
-                s => s,
-            };
+            state = self.try_proceed_with_mul(state, &calculator).await;
 
+            // guard to avoid deadlock in situation when we are not sending or expecting any message
+            // but can proceed without waiting for anything
             if self.can_proceed(&state) {
                 idx += 1;
                 continue;
@@ -331,81 +548,49 @@ impl Node {
                 Some(e) => e,
                 None => {
                     log::debug!("party channel closed");
-                    return;
+                    panic!("abort");
                 }
             };
 
-            if self.id == 0 {
-                println!("NodeEvents::{:?}", event);
-            }
-
-            match event {
-                NodeEvents::CirReady(c_id, s) => {
-                    // evaluate node as sum of gotten shares
-                    if self.fully_open.contains_key(&c_id) {
-                        log::debug!("got twice opened value for {}", c_id);
-                    }
-
-                    self.fully_open.insert(c_id, s);
-                }
-                NodeEvents::SelfVariableReady(c_id, r, r_share) => {
-                    if !self.variables.contains_key(&c_id) {
-                        log::debug!("got foreign variable");
-                        continue;
-                    }
-                    let x = self.variables.get(&c_id).expect("checked");
-
-                    let xr = x.sub(r);
-                    // send to everyone x-r
-                    self.party_commands
-                        .send(NodeCommands::OpenSelfShare(xr, c_id.clone()))
-                        .expect("send should succeed");
-                    // evaluate our variable as (x-r) + r_share
-                    self.evaluated
-                        .insert(c_id, calculator.add_const(r_share, xr));
-                }
-                NodeEvents::NodeVariableReady(c_id, s) => {
-                    if self.variable_salts.contains_key(&c_id) {
-                        log::debug!("got twice value for {}", c_id);
-                        continue;
-                    }
-
-                    self.variable_salts.insert(c_id.clone(), s);
-                    self.combine_variable_if_full(c_id, &calculator);
-                }
-                NodeEvents::BeaverFor(c_id, beaver) => {
-                    if !self.beavers.contains_key(&c_id) {
-                        log::debug!("got twice value for {}", c_id);
-                    }
-
-                    self.beavers.insert(c_id, beaver);
-                }
-                NodeEvents::NodeVariableShareReady(c_id, s) => {
-                    if self.variable_shares.contains_key(&c_id) {
-                        log::debug!("got twice value for {}", c_id);
-                        continue;
-                    }
-
-                    self.variable_shares.insert(c_id.clone(), s);
-                    self.combine_variable_if_full(c_id, &calculator);
-                }
-            }
+            self.handle_event(event, &calculator);
         }
 
         // we have final share lets open it now
-
         let last_node_id = circuit_nodes
             .last()
             .expect("at least one should exist")
             .cir_id();
 
+        // send all proofs
+        for (cir_id, proof) in self.my_proofs.iter() {
+            self.party_commands
+                .send(NodeCommands::ProofFor(cir_id.clone(), proof.clone()))
+                .expect("Send should succeed");
+        }
+
+        // wait for all proofs
+        self.wait_for_proofs(&calculator).await;
+
+        // check proofs
+        let to_check = self.check_proofs();
+
+        // wait for all nodes to conclude their checks
+        self.wait_for_others(to_check, &calculator).await;
+
+        self.evaluate_last(last_node_id, &calculator).await
+    }
+
+    async fn evaluate_last(&mut self, last_id: CirId, calculator: &Calculator) -> u64 {
         let evaluated = self
             .evaluated
-            .remove(&last_node_id)
+            .remove(&last_id)
             .expect("we finished the evaluation");
 
+        self.original_shares
+            .insert(last_id.clone(), evaluated.clone());
+
         self.party_commands
-            .send(NodeCommands::OpenShare(evaluated, last_node_id.clone()))
+            .send(NodeCommands::OpenShare(evaluated, last_id.clone()))
             .expect("should succeed");
 
         loop {
@@ -413,28 +598,83 @@ impl Node {
                 Some(e) => e,
                 None => {
                     log::debug!("party channel closed");
-                    return;
+                    panic!("abort");
                 }
             };
-            match event {
-                NodeEvents::CirReady(c, s) => {
-                    if c == last_node_id {
-                        let el = sum_elems(&s.into_iter().map(|(e, _)| e).collect());
 
-                        if self.id == 0 {
-                            let n = <u64>::from_str_radix(
-                                format!("{:?}", el.to_repr()).strip_prefix("0x").unwrap(),
-                                16,
-                            )
-                            .unwrap();
-                            println!("got {:?}", n);
-                        }
-                        return;
-                    }
-                }
-                // ignore
-                _ => {}
+            self.handle_event(event, &calculator);
+
+            if self.fully_open.contains_key(&last_id) {
+                break;
             }
         }
+
+        let shares = self.fully_open.remove(&last_id).expect("checked");
+
+        let ev_elem = sum_elems(&shares.into_iter().map(|(e, _)| e).collect());
+
+        let n = <u64>::from_str_radix(
+            format!("{:?}", ev_elem.to_repr())
+                .strip_prefix("0x")
+                .unwrap(),
+            16,
+        )
+        .unwrap();
+        let ev_x = calculator.generate_commitment_share(
+            ev_elem.clone(),
+            self.original_shares.remove(&last_id).expect("checked"),
+        );
+
+        let (ev_hash, ev_salt) = Calculator::generate_commitment(&ev_x);
+
+        let ev_proof = (ev_hash, ev_x.clone(), ev_salt);
+
+        self.my_proofs.clear();
+        self.my_proofs.insert(last_id.clone(), ev_proof);
+
+        self.party_commands
+            .send(NodeCommands::CommitmentFor(last_id.clone(), ev_hash))
+            .expect("send should succeed");
+
+        loop {
+            let event = match self.party_events.recv().await {
+                Some(e) => e,
+                None => {
+                    log::debug!("party channel closed");
+                    panic!("abort");
+                }
+            };
+
+            self.handle_event(event, &calculator);
+
+            if self.commitments.contains_key(&last_id) {
+                break;
+            }
+        }
+
+        for (cir_id, proof) in self.my_proofs.iter() {
+            self.party_commands
+                .send(NodeCommands::ProofFor(cir_id.clone(), proof.clone()))
+                .expect("Send should succeed");
+        }
+
+        // wait for all proofs
+        self.wait_for_proofs(&calculator).await;
+
+        if self.id == 0 {
+            println!("loop2 {:?}", last_id);
+        }
+        // check proofs
+        let to_check = self.check_proofs();
+
+        // wait for all nodes to conclude their checks
+        self.wait_for_others(to_check, &calculator).await;
+
+        // yay
+        if self.id == 0 {
+            println!("Got {:?}", n);
+        }
+
+        n
     }
 }

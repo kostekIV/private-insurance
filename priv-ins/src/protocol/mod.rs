@@ -6,19 +6,13 @@ pub mod node;
 pub mod party;
 mod test;
 
-use async_recursion::async_recursion;
-use ff::{Field, PrimeField};
 use std::collections::HashMap;
-use std::iter;
-use std::ops::Mul;
 
-use crate::crypto::shares::{BeaverShare, Elem, Share, Shares};
-use crate::expressions::{BinaryOp, Expression};
-use crate::protocol::expression::decorate_expression;
-use crate::protocol::network::Network;
-use crate::protocol::node::Node;
-use crate::protocol::party::Party;
-use tokio::runtime::Runtime;
+use crate::crypto::shares::{BeaverShare, Commitment, CommitmentProof, Elem, Share, Shares};
+use crate::expressions::Expression;
+use crate::protocol::{
+    expression::decorate_expression, network::Network, node::Node, party::Party,
+};
 use tokio::sync::mpsc::{
     unbounded_channel, UnboundedReceiver as Receiver, UnboundedSender as Sender,
 };
@@ -52,6 +46,7 @@ pub enum DealerCommands {
     NodeOpenSelfInput(CirId),
     /// Node needs beaver for cir_id
     BeaverFor(CirId),
+    /// Node needs its alpha
     NeedAlpha,
 }
 
@@ -65,7 +60,16 @@ pub enum NodeCommands {
     OpenSelfInput(CirId),
     /// Node needs beaver for cir_id
     NeedBeaver(CirId),
+    /// Node needs its alpha
     NeedAlpha,
+    /// Broadcast commitment for cir_id
+    CommitmentFor(CirId, Commitment),
+    /// Broadcast proof for cir_id
+    ProofFor(CirId, CommitmentProof),
+    /// Broadcast that proof was verified for cir_id
+    ProofVerified(CirId),
+    /// broadcast that proof was invalid
+    ProofInvalid(CirId),
 }
 
 #[derive(Debug)]
@@ -80,6 +84,14 @@ pub enum NodeEvents {
     NodeVariableShareReady(CirId, Share),
     /// beaver for node in circuit is ready
     BeaverFor(CirId, BeaverShare),
+    /// got all commitments for cir_id
+    CommitmentsFor(CirId, Vec<(NodeId, Commitment)>),
+    /// got all proofs for cir_id
+    ProofsFor(CirId, Vec<(NodeId, CommitmentProof)>),
+    /// proof was verified for cir_id
+    ProofValid(CirId),
+    /// broadcast that proof was invalid
+    ProofInvalid(CirId),
 }
 
 #[derive(Debug)]
@@ -143,7 +155,7 @@ pub async fn run_node<N: Network + 'static + Send>(config: NodeConfig<N>) {
         variables.insert(cir_id, Elem::from(*our_variables.get(&var_id).expect("")));
     }
 
-    let mut node = Node::new(id, alpha_rx, node_cmd_tx, node_events_rx, variables);
+    let node = Node::new(id, alpha_rx, node_cmd_tx, node_events_rx, variables);
     let mut party = Party::new(
         id,
         dealer,
@@ -164,6 +176,6 @@ pub async fn run_node<N: Network + 'static + Send>(config: NodeConfig<N>) {
     let node_handle = tokio::spawn(node_task);
     tokio::spawn(party_task);
 
-    node_handle.await;
+    node_handle.await.expect("");
     log::debug!("node {} finished", id);
 }

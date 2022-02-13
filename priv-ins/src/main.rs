@@ -3,22 +3,25 @@ extern crate ff;
 extern crate futures;
 extern crate tokio;
 
-use crate::rest::expression;
-use std::collections::HashMap;
-use tide::http::headers::HeaderValue;
-use tide::log::LevelFilter;
+use std::{collections::HashMap, fs};
+use tide::{
+    http::headers::HeaderValue,
+    security::{CorsMiddleware, Origin},
+};
 
 mod crypto;
 mod expressions;
 mod protocol;
 mod rest;
 
-use crate::expressions::BinaryOp::{Add, Mul};
-use crate::expressions::Expression;
-use crate::protocol::dealer::TrustedDealer;
-use crate::protocol::network::setup_network;
-use crate::protocol::{run_node, NodeConfig};
-use tide::security::{CorsMiddleware, Origin};
+use crate::{
+    expressions::{
+        BinaryOp::{Add, Mul},
+        Expression,
+    },
+    protocol::{dealer::TrustedDealer, network::setup_network, run_node, NodeConfig},
+};
+use serde::Deserialize;
 use tokio::sync::mpsc::unbounded_channel;
 
 fn get_cors() -> CorsMiddleware {
@@ -28,7 +31,12 @@ fn get_cors() -> CorsMiddleware {
         .allow_credentials(false)
 }
 
-<<<<<<< HEAD
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct VariableConfig {
+    nodes: Vec<HashMap<String, u64>>,
+}
+
 #[tokio::main]
 async fn main() {
     run_nodes().await;
@@ -52,8 +60,15 @@ async fn run_nodes() {
         cmd_rx,
     );
 
+    let variable_config: VariableConfig = serde_json::from_str(
+        &fs::read_to_string("variables_config.json")
+            .expect("Unable to read config file containing peer addresses"),
+    )
+    .expect("JSON was not well-formatted");
+    println!("{:?}", variable_config);
+
     let mut handles = vec![];
-    let d = tokio::spawn(dealer.run());
+    let _d = tokio::spawn(dealer.run());
     for ((id, n), r) in (0..n_parties)
         .zip(networks.into_iter())
         .zip(receivers.into_iter())
@@ -92,7 +107,7 @@ async fn run_nodes() {
         let variables = (0..n_parties)
             .map(|id| (id.to_string(), id as u64))
             .collect();
-        let our_variables = HashMap::from([(id.to_string(), (id * 10 + 1) as u64)]);
+        let our_variables = variable_config.nodes[id as usize].clone();
         let config = NodeConfig {
             id: id as u64,
             n_parties: n_parties as u8,

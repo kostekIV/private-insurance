@@ -1,5 +1,9 @@
 use crate::{
-    crypto::shares::{BeaverShare, Elem, Share},
+    crypto::shares::{
+        self, compute_commitment, random_salt, BeaverShare, CommitmentProof, Elem, Hash, Salt,
+        Share,
+    },
+    ff::Field,
     protocol::NodeId,
 };
 
@@ -9,6 +13,7 @@ pub struct Calculator {
 }
 
 impl Calculator {
+    /// Returns a `Calculator` for Node with `id` and alpha_i = `alpha`
     pub fn new(id: NodeId, alpha: Elem) -> Self {
         Self {
             id,
@@ -17,18 +22,23 @@ impl Calculator {
     }
 
     /// Returns a sum of two shares [x+y]
-    pub fn add(&self, mac_1: Share, mac_2: Share) -> Share {
-        (mac_1.0 + mac_2.0, mac_1.1 + mac_2.1)
+    pub fn add(&self, share_1: Share, share_2: Share) -> Share {
+        (share_1.0 + share_2.0, share_1.1 + share_2.1)
     }
 
-    /// Returns a substraction of two shares [x-y]
-    pub fn sub(&self, mac_1: Share, mac_2: Share) -> Share {
-        (mac_1.0 - mac_2.0, mac_1.1 - mac_2.1)
+    /// Returns a subtraction of two shares [x-y]
+    pub fn sub(&self, share_1: Share, share_2: Share) -> Share {
+        (share_1.0 - share_2.0, share_1.1 - share_2.1)
     }
 
     /// Returns shares [x-a] and [y-b] that need to be opened for multiplication
-    pub fn mul_prepare(&self, mac_1: Share, mac_2: Share, beaver: BeaverShare) -> (Share, Share) {
-        (self.sub(mac_1, beaver.0), self.sub(mac_2, beaver.1))
+    pub fn mul_prepare(
+        &self,
+        share_1: Share,
+        share_2: Share,
+        beaver: BeaverShare,
+    ) -> (Share, Share) {
+        (self.sub(share_1, beaver.0), self.sub(share_2, beaver.1))
     }
 
     /// Multiplies beaver share with opened [x-a] and [y-b]
@@ -42,17 +52,42 @@ impl Calculator {
     }
 
     /// Adds opened a element to share [x]
-    pub fn add_const(&self, mac: Share, share: Elem) -> Share {
+    pub fn add_const(&self, share: Share, constant: Elem) -> Share {
         (
-            if self.id == 0 { mac.0 + share } else { mac.0 },
-            self.alpha_share * share + mac.1,
+            if self.id == 0 {
+                share.0 + constant
+            } else {
+                share.0
+            },
+            self.alpha_share * constant + share.1,
         )
     }
 
     /// Multiplies share [x] by opened element a
-    pub fn mul_by_const(&self, mac: Share, share: Elem) -> Share {
-        (mac.0 * share, mac.1 * share)
+    pub fn mul_by_const(&self, share: Share, constant: Elem) -> Share {
+        (share.0 * constant, share.1 * constant)
     }
+
+    /// Generates commitment (hash, salt) pair for `elem` such that hash = H(elem || salt)
+    pub fn generate_commitment(elem: &Elem) -> (Hash, Salt) {
+        let salt = random_salt();
+        (compute_commitment(elem, &salt), salt)
+    }
+
+    /// Generates element that we want to commit for partial opening d_i = a_i * x' - m(x)_i
+    pub fn generate_commitment_share(&self, opened: Elem, share: Share) -> Elem {
+        self.alpha_share * opened - share.1
+    }
+}
+
+/// Verifies whether vector of CommitmentProof is correct and whether Elem's sum to 0. Returns true if correct
+pub fn verify_commitments(commitments: &Vec<CommitmentProof>) -> bool {
+    for (hash, elem, salt) in commitments.iter() {
+        if *hash != shares::compute_commitment(elem, salt) {
+            return false;
+        }
+    }
+    shares::sum_elems(&commitments.iter().map(|c| c.1).collect()) == Elem::zero()
 }
 
 #[cfg(test)]
@@ -239,14 +274,10 @@ mod tests {
         let beaver_a = shares::sum_elems(&beaver_shares.iter().map(|b| b.0 .0).collect());
         let beaver_b = shares::sum_elems(&beaver_shares.iter().map(|b| b.1 .0).collect());
 
-        let macs_a: Vec<_> = beaver_shares.iter().map(|b| b.0).collect();
-        let macs_b: Vec<_> = beaver_shares.iter().map(|b| b.1).collect();
-        let macs: Vec<_> = macs_a
+        let macs: Vec<_> = calculators
             .iter()
-            .zip(macs_b.iter())
-            .zip(calculators.iter())
             .zip(beaver_shares.iter())
-            .map(|(((m_a, m_b), c), beaver)| c.mul(*beaver, a - beaver_a, b - beaver_b))
+            .map(|(c, beaver)| c.mul(*beaver, a - beaver_a, b - beaver_b))
             .collect();
 
         let shared = macs.iter().fold(Elem::zero(), |a, &b| a + b.0);
