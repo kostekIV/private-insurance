@@ -8,13 +8,12 @@ Project front-end was created in `Typescript` with `React` framework.
 Project back-end was created in `Rust`.
 Communication between uses `Tide` framework.
 ## How to run protocol
-Server receiving requests from UI can be run by
+To run server receiving requests go to `priv-ins` folder and run it by
 ```
 cargo run
 ```
-In `priv-ins` folder.
 
-There exists file `priv-ins/variable_config.json`. It contains an array of private inputs for nodes. Each input is a map from VariableId to Value. Example config is:
+To give values to variables used in protocol modify file `priv-ins/variable_config.json`. It contains an array of private inputs for nodes. Each input is a map from variable name to Value. Example config is:
 ```
 {
     "Nodes": [
@@ -46,7 +45,7 @@ In this example
 * node number 3 has 1 variable var_3 with value 420
 * node number 4 has 2 variables var_4_0, var_4_1 with values 1 and 2
 
-Next complete a form for building building an arithmetic circuit in UI and submit request. Evaluated value should be printed in terminal by the server.
+Next complete a form for building an arithmetic circuit in UI and submit request. Evaluated value should be printed in terminal by the server.
 
 ## How to run UI
 
