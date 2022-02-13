@@ -3,23 +3,25 @@ extern crate ff;
 extern crate futures;
 extern crate tokio;
 
-use crate::rest::expression;
 use std::{collections::HashMap, fs};
-use tide::http::headers::HeaderValue;
-use tide::log::LevelFilter;
+use tide::{
+    http::headers::HeaderValue,
+    security::{CorsMiddleware, Origin},
+};
 
 mod crypto;
 mod expressions;
 mod protocol;
 mod rest;
 
-use crate::expressions::BinaryOp::{Add, Mul};
-use crate::expressions::Expression;
-use crate::protocol::dealer::TrustedDealer;
-use crate::protocol::network::setup_network;
-use crate::protocol::{run_node, NodeConfig};
+use crate::{
+    expressions::{
+        BinaryOp::{Add, Mul},
+        Expression,
+    },
+    protocol::{dealer::TrustedDealer, network::setup_network, run_node, NodeConfig},
+};
 use serde::Deserialize;
-use tide::security::{CorsMiddleware, Origin};
 use tokio::sync::mpsc::unbounded_channel;
 
 fn get_cors() -> CorsMiddleware {
@@ -66,7 +68,7 @@ async fn run_nodes() {
     println!("{:?}", variable_config);
 
     let mut handles = vec![];
-    let d = tokio::spawn(dealer.run());
+    let _d = tokio::spawn(dealer.run());
     for ((id, n), r) in (0..n_parties)
         .zip(networks.into_iter())
         .zip(receivers.into_iter())
