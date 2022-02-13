@@ -13,6 +13,7 @@ pub struct Calculator {
 }
 
 impl Calculator {
+    /// Returns a `Calculator` for Node with `id` and alpha_i = `alpha`
     pub fn new(id: NodeId, alpha: Elem) -> Self {
         Self {
             id,
@@ -67,6 +68,7 @@ impl Calculator {
         (share.0 * constant, share.1 * constant)
     }
 
+    /// Generates commitment (hash, salt) pair for `elem` such that hash = H(elem || salt)
     pub fn generate_commitment(elem: &Elem) -> (Hash, Salt) {
         let salt = random_salt();
         (compute_commitment(elem, &salt), salt)
@@ -78,6 +80,7 @@ impl Calculator {
     }
 }
 
+/// Verifies whether vector of CommitmentProof is correct and whether Elem's sum to 0. Returns true if correct
 pub fn verify_commitments(commitments: &Vec<CommitmentProof>) -> bool {
     for (hash, elem, salt) in commitments.iter() {
         if *hash != shares::compute_commitment(elem, salt) {
@@ -271,14 +274,10 @@ mod tests {
         let beaver_a = shares::sum_elems(&beaver_shares.iter().map(|b| b.0 .0).collect());
         let beaver_b = shares::sum_elems(&beaver_shares.iter().map(|b| b.1 .0).collect());
 
-        let macs_a: Vec<_> = beaver_shares.iter().map(|b| b.0).collect();
-        let macs_b: Vec<_> = beaver_shares.iter().map(|b| b.1).collect();
-        let macs: Vec<_> = macs_a
+        let macs: Vec<_> = calculators
             .iter()
-            .zip(macs_b.iter())
-            .zip(calculators.iter())
             .zip(beaver_shares.iter())
-            .map(|(((m_a, m_b), c), beaver)| c.mul(*beaver, a - beaver_a, b - beaver_b))
+            .map(|(c, beaver)| c.mul(*beaver, a - beaver_a, b - beaver_b))
             .collect();
 
         let shared = macs.iter().fold(Elem::zero(), |a, &b| a + b.0);
